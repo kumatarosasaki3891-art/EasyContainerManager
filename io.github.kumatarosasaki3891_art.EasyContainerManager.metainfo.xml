@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.kumatarosasaki3891_art.EasyContainerManager</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>EasyContainerManager</name>
+  <name xml:lang="ja">簡単コンテナ管理 (EasyContainerManager)</name>
+
+  <summary>Manage Docker, Podman, and nerdctl containers, Compose projects, and diagnostics locally or via SSH</summary>
+  <summary xml:lang="ja">Docker・Podman・nerdctl のコンテナや Compose、リソース監視、サービス・バージョン診断をまとめて管理</summary>
+
+  <description>
+    <p>
+      EasyContainerManager is a lightweight desktop tool for managing Docker, Podman, and nerdctl containers, images, and Compose projects on both local machines and remote SSH hosts.
+    </p>
+    <p>
+      Diagnostics run locally on your device without sending user data or diagnostic results externally. Network access is used only for SSH connections and optional read-only retrieval of public version definition data.
+    </p>
+    <p>Key Features:</p>
+    <ul>
+      <li>Multi-Engine Support: Automatically detects and manages Docker, Podman, and nerdctl containers, images, and Compose stacks.</li>
+      <li>Port Binding Visibility: Highlights ports bound to all interfaces (0.0.0.0 / [::]) separately from localhost bindings.</li>
+      <li>SSH Remote Management: Connect to remote container hosts using ssh-agent or private keys with strict host key checking.</li>
+      <li>Resource Monitoring: Real-time CPU, memory, and network I/O tracking with optional in-app threshold alerts.</li>
+      <li>In-Container Service &amp; Version Diagnostics: Read-only inspection of container logs, runtime branches, EOL status, and curated critical advisories cached in local SQLite.</li>
+      <li>Multi-language Support: Available in 11 languages.</li>
+    </ul>
+    <p xml:lang="ja">
+      簡単コンテナ管理 (EasyContainerManager) は、Docker・Podman・nerdctl のコンテナ、イメージ、Compose プロジェクトをローカル環境および SSH リモートホスト上でまとめて管理できる軽量デスクトップツールです。
+    </p>
+    <p xml:lang="ja">
+      診断処理は端末内で完結し、ユーザーデータや診断結果を外部へ送信することはありません。通信は SSH 接続と公開バージョン定義データの読み取り専用取得にのみ使用します。
+    </p>
+    <p xml:lang="ja">主な機能:</p>
+    <ul xml:lang="ja">
+      <li>マルチエンジン対応: Docker / Podman / nerdctl の自動検出とコンテナ・イメージ・Compose 管理。</li>
+      <li>公開ポートの可視化: 0.0.0.0 / [::] の全ネットワーク公開バインドを警告色でわかりやすく区別表示。</li>
+      <li>SSH リモート管理: ssh-agent や秘密鍵を利用した安全なリモートホスト管理（StrictHostKeyChecking 有効）。</li>
+      <li>リソース監視: コンテナ別の CPU・メモリ・通信量・Compose 稼働状況の監視とアプリ内通知。</li>
+      <li>サービス・バージョン診断: ローカル SQLite キャッシュを用いたランタイム EOL・遅れ・精選された緊急アドバイザリおよびログ診断。</li>
+      <li>11言語対応: 日本語、英語、中国語（簡体字・繁体字）、韓国語、フランス語、ドイツ語、スペイン語、イタリア語、ポルトガル語、ロシア語に対応。</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">io.github.kumatarosasaki3891_art.EasyContainerManager.desktop</launchable>
+
+  <url type="homepage">https://github.com/kumatarosasaki3891-art/EasyContainerManager</url>
+  <url type="bugtracker">https://github.com/kumatarosasaki3891-art/EasyContainerManager/issues</url>
+  <url type="vcs-browser">https://github.com/kumatarosasaki3891-art/EasyContainerManager</url>
+
+  <developer id="io.github.kumatarosasaki3891_art">
+    <name>Sasaki Kumataro</name>
+  </developer>
+
+  <provides>
+    <binary>EasyContainerManager</binary>
+  </provides>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="1.0.0" date="2026-11-19">
+      <description>
+        <p>Initial release with container management, Compose support, SSH remote access, service diagnostics, and version diagnostics.</p>
+        <p xml:lang="ja">コンテナ・Compose・SSH管理・サービス診断およびバージョン診断を備えた初期リリース。</p>
+      </description>
+    </release>
+  </releases>
+</component>

@@ -1,0 +1,19 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="EasyContainerManager.Views.RuntimeSelectionWindow"
+        Icon="/Assets/app-icon.ico"
+        Title="簡単コンテナ管理"
+        Width="580" Height="210" MinWidth="540" MinHeight="190"
+        CanResize="False" WindowStartupLocation="CenterScreen">
+    <StackPanel Margin="24" Spacing="24" VerticalAlignment="Center">
+        <TextBlock x:Name="PromptText" FontSize="18" FontWeight="SemiBold" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
+                <Button x:Name="DockerButton" MinWidth="140" Height="40"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                <Button x:Name="PodmanButton" MinWidth="140" Height="40"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                <Button x:Name="NerdctlButton" MinWidth="140" Height="40"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+        </StackPanel>
+    </StackPanel>
+</Window>

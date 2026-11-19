@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>簡単コンテナ管理</Product>
+    <Company>XXX</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Folder Include="Models\" />
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="ViewModels\ViewModelBase.fs" />
+    <Compile Include="Localization.fs" />
+    <Compile Include="Models\ContainerStats.fs" />
+    <Compile Include="Models\ContainerInfo.fs" />
+    <Compile Include="Models\ServiceInference.fs" />
+    <Compile Include="Models\ServiceDiagnostics.fs" />
+    <Compile Include="Models\ImageInfo.fs" />
+    <Compile Include="Models\ChoiceOption.fs" />
+    <Compile Include="Models\SshConnection.fs" />
+    <Compile Include="Models\ComposeProject.fs" />
+    <Compile Include="Models\ComposeRepository.fs" />
+    <Compile Include="Models\MasterDataRepository.fs" />
+    <Compile Include="Models\VersionDiagnostics.fs" />
+    <Compile Include="AppSettings.fs" />
+    <Compile Include="ContainerCli.fs" />
+    <Compile Include="ViewModels\MainViewModel.fs" />
+    <Compile Include="Views\RuntimeSelectionWindow.axaml.fs" />
+    <Compile Include="Views\MainWindow.axaml.fs" />
+    <Compile Include="ViewLocator.fs" />
+    <Compile Include="App.axaml.fs" />
+    <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.5" />
+    <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
+      <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
+      <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="11.0.0" />
+  </ItemGroup>
+
+  <Target Name="BuildMsix">
+    <PropertyGroup>
+      <MsixVersion Condition="'$(MsixVersion)' == ''">1.0.0.0</MsixVersion>
+      <MsixArchitectures Condition="'$(MsixArchitectures)' == ''">x64</MsixArchitectures>
+    </PropertyGroup>
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build-msix.ps1&quot; -Configuration $(Configuration) -Version $(MsixVersion) -Architectures $(MsixArchitectures)" />
+  </Target>
+</Project>

@@ -1,0 +1,16 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=EasyContainerManager
+Name[ja]=簡単コンテナ管理 (EasyContainerManager)
+GenericName=Container & Compose Manager
+GenericName[ja]=コンテナ・Compose 管理ツール
+Comment=Manage Docker, Podman, and nerdctl containers, Compose projects, and diagnostics locally or over SSH
+Comment[ja]=Docker・Podman・nerdctl のコンテナ、Compose、監視、診断をローカル＆SSHで一括管理
+Exec=EasyContainerManager
+Icon=io.github.kumatarosasaki3891_art.EasyContainerManager
+Terminal=false
+Categories=System;Monitor;Development;Utility;
+Keywords=docker;podman;nerdctl;container;compose;ssh;monitoring;diagnostic;
+Keywords[ja]=コンテナ;docker;podman;nerdctl;compose;ssh;監視;診断;
+StartupWMClass=EasyContainerManager

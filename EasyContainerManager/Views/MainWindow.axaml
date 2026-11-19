@@ -1,0 +1,660 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:EasyContainerManager.ViewModels"
+        xmlns:model="using:EasyContainerManager.Models"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="720"
+        x:Class="EasyContainerManager.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/app-icon.ico"
+        Title="{Binding AppTitle}"
+        Width="1000" Height="720" MinWidth="760" MinHeight="560">
+
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TabItem">
+            <Setter Property="MinWidth" Value="140" />
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="WrapPanel Button">
+            <Setter Property="Margin" Value="0,0,8,8" />
+        </Style>
+    </Window.Styles>
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.fs) -->
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <Grid>
+        <Grid RowDefinitions="Auto,*" Margin="24" RowSpacing="16">
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+            <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="24">
+                <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <Border Width="48" Height="48" CornerRadius="10" ClipToBounds="True" VerticalAlignment="Center">
+                        <Image Source="/Assets/icon.jpg" Stretch="UniformToFill" />
+                    </Border>
+                    <StackPanel Spacing="3" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding AppTitle}" FontSize="26" FontWeight="Bold" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding AppSubtitle}" Foreground="Gray" TextWrapping="Wrap" />
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                    <ComboBox ItemsSource="{Binding Languages}"
+                              SelectedItem="{Binding Language, Mode=TwoWay}" Width="124" VerticalAlignment="Center">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="model:ChoiceOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <ComboBox ItemsSource="{Binding ThemeOptions}"
+                              SelectedItem="{Binding Theme, Mode=TwoWay}" Width="124" VerticalAlignment="Center">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="model:ChoiceOption">
+                                <TextBlock Text="{Binding Label}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button x:Name="RefreshButton" Content="{Binding RefreshLabel}" Width="84" />
+                    <Button x:Name="OpenInfoDialogButton" Width="38" Padding="0"
+                            ToolTip.Tip="{Binding InfoDialogTitle}"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                        <Grid Width="28" Height="22">
+                            <TextBlock Text="ℹ️" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Ellipse Width="7" Height="7" Fill="#2563EB"
+                                     IsVisible="{Binding IsAppOutdated}"
+                                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,1,1,0"
+                                     ToolTip.Tip="{Binding AppUpdateAvailableText}" />
+                        </Grid>
+                    </Button>
+                </StackPanel>
+            </Grid>
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="16">
+                <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center"
+                           HorizontalAlignment="Left" TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12">
+                    <TextBlock Text="{Binding RuntimeModeLabel}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding ContainerEngineStatus}" VerticalAlignment="Center" />
+                    <Button x:Name="StartContainerEngineButton" Content="{Binding DesktopStartButtonLabel}"
+                        IsVisible="{Binding ShowContainerEngineStart}" IsEnabled="{Binding CanStartContainerEngine}" />
+                    <CheckBox Content="{Binding RefreshIntervalLabel}" IsChecked="{Binding AutoRefresh}"
+                              VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+            <StackPanel Grid.Row="2" Spacing="8">
+                <TextBlock Text="{Binding ConnectionHelp}" TextWrapping="Wrap" />
+                <Expander Header="{Binding DetailsLabel}" IsVisible="{Binding HasConnectionDetails}"
+                          IsExpanded="{Binding DetailsExpanded, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                    <TextBox Text="{Binding ConnectionDetails, Mode=OneWay}" IsReadOnly="True"
+                             AcceptsReturn="True" TextWrapping="Wrap" Height="150"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                </Expander>
+            </StackPanel>
+            <Grid Grid.Row="3" ColumnDefinitions="Auto,220,*,Auto" ColumnSpacing="12">
+                <TextBlock Text="{Binding ConnectionLabel}" VerticalAlignment="Center" />
+                <ComboBox Grid.Column="1" ItemsSource="{Binding Connections}"
+                          SelectedItem="{Binding SelectedConnection, Mode=TwoWay}"
+                          IsEnabled="{Binding CanChangeConnection}" HorizontalAlignment="Stretch">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="model:ChoiceOption">
+                            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Label}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <CheckBox Grid.Column="3" Content="{Binding NotificationsLabel}" IsChecked="{Binding NotificationsEnabled}" />
+            </Grid>
+        </Grid>
+
+        <TabControl Grid.Row="1">
+            <TabControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </TabControl.ItemsPanel>
+            <TabItem Header="{Binding TabContainersLabel}">
+                <Grid RowDefinitions="3*,Auto,2*" RowSpacing="4" Margin="8,4,8,8">
+                    <Grid Grid.Row="0" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="6" MinHeight="90">
+                        <Grid Grid.Row="0" ColumnDefinitions="2*,*,2*,2*,2*" ColumnSpacing="8" Margin="4,4,4,2">
+                            <TextBlock Text="{Binding ContainerNameLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="{Binding StateLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="2" Text="{Binding PublishedPortsLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="3" Text="{Binding ImageLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="4" Text="{Binding CreatedAtLabel}" FontWeight="SemiBold" />
+                        </Grid>
+                        <ListBox Grid.Row="1" ItemsSource="{Binding Containers}" SelectedItem="{Binding SelectedContainer}" MinHeight="60">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="model:ContainerInfo">
+                                    <Grid ColumnDefinitions="2*,*,2*,2*,2*" ColumnSpacing="8" Margin="4,4">
+                                        <StackPanel Spacing="2">
+                                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding ResourceSummary}" Foreground="{Binding ResourceBrush}" FontSize="11"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding StatusLabel}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="2" Text="{Binding PublishedPorts}" Foreground="{Binding PortsBrush}"
+                                                   ToolTip.Tip="{Binding PortsTooltip}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Column="3" Text="{Binding Image}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="4" Text="{Binding Created}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <WrapPanel Grid.Row="2" Orientation="Horizontal">
+                            <Button x:Name="StartButton" Content="{Binding StartLabel}" MinWidth="88" IsEnabled="{Binding CanOperate}" />
+                            <Button x:Name="StopButton" Content="{Binding StopLabel}" MinWidth="88" IsEnabled="{Binding CanOperate}" />
+                            <Button x:Name="RestartButton" Content="{Binding RestartLabel}" MinWidth="88" IsEnabled="{Binding CanOperate}" />
+                            <Button x:Name="EnterContainerButton" Content="{Binding EnterContainerLabel}" MinWidth="88" IsEnabled="{Binding CanOperate}" />
+                            <Button x:Name="HostTerminalButton" Content="{Binding TerminalLabel}" MinWidth="88" />
+                            <Button x:Name="RemoveContainerButton" Content="{Binding DeleteLabel}" MinWidth="88" IsEnabled="{Binding CanRemoveContainer}" />
+                            <CheckBox Content="{Binding FollowLogsLabel}" IsChecked="{Binding FollowLogs}" VerticalAlignment="Center" Margin="0,0,8,8" />
+                        </WrapPanel>
+                        <Border Grid.Row="3" IsVisible="{Binding HasSelectedContainer}"
+                                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,0,0,4">
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalAlignment="Center">
+                                <Button x:Name="InferredServicesCardButton" Grid.Column="0"
+                                        IsVisible="{Binding HasInferredServices}"
+                                        Background="Transparent" BorderThickness="0" Padding="0" Margin="0"
+                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="2">
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding InferredServicesLabel}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding InferredServicesText}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Text="{Binding InferredServicesNote}" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
+                                    </Grid>
+                                </Button>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Button x:Name="OpenInferenceDialogButton"
+                                            Content="{Binding InferenceDetailButtonLabel}"
+                                            FontSize="12" Padding="8,4" VerticalAlignment="Center" />
+                                    <Button x:Name="OpenDiagnosticsButton"
+                                            Content="{Binding DiagnosticsButtonLabel}"
+                                            FontSize="12" Padding="8,4" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                    <GridSplitter Grid.Row="1" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                  Height="6" HorizontalAlignment="Stretch" Background="Transparent" />
+                    <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="4" MinHeight="60">
+                        <TextBlock Grid.Row="0" Text="{Binding ContainerLogsLabel}" FontSize="16" FontWeight="SemiBold" />
+                        <TextBox Grid.Row="1" Text="{Binding LogText}" IsReadOnly="True"
+                                 AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Code,Consolas,monospace"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="{Binding TabImagesLabel}">
+                <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="10" Margin="8">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                        <TextBox Text="{Binding ImagePullReference}" PlaceholderText="{Binding ImagePullPlaceholder}" />
+                        <Button x:Name="PullImageButton" Grid.Column="1" Content="{Binding PullImageLabel}" MinWidth="96" />
+                    </Grid>
+                    <Grid Grid.Row="1" ColumnDefinitions="2*,*,*,*" Margin="4,0">
+                        <TextBlock Text="{Binding RepositoryLabel}" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="1" Text="{Binding TagLabel}" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="2" Text="{Binding SizeLabel}" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="3" Text="{Binding CreatedAtLabel}" FontWeight="SemiBold" />
+                    </Grid>
+                    <ListBox Grid.Row="2" ItemsSource="{Binding Images}" SelectedItem="{Binding SelectedImage}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="model:ImageInfo">
+                                <Grid ColumnDefinitions="2*,*,*,*" Margin="4,8">
+                                    <TextBlock Text="{Binding Repository}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Tag}" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Size}" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="3" Text="{Binding Created}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="10">
+                        <Button x:Name="RemoveImageButton" Content="{Binding DeleteImageLabel}" IsEnabled="{Binding CanRemoveImage}" />
+                    </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="{Binding TabComposeLabel}">
+                <Grid RowDefinitions="Auto,3*,Auto,2*" RowSpacing="6" Margin="8">
+                    <Grid Grid.Row="0" RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,2*,Auto,Auto" RowSpacing="6" ColumnSpacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding EngineLabel}" VerticalAlignment="Center" />
+                            <ComboBox ItemsSource="{Binding ComposeEngineOptions}"
+                                      SelectedItem="{Binding SelectedComposeEngine, Mode=TwoWay}"
+                                      IsEnabled="{Binding CanChangeComposeEngine}" MinWidth="130">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="model:ChoiceOption">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </StackPanel>
+                        <TextBox Grid.Column="1" Text="{Binding NewComposeName}" PlaceholderText="{Binding ComposeNamePlaceholder}" />
+                        <TextBox Grid.Column="2" Grid.ColumnSpan="3" Text="{Binding NewComposeUrl}" PlaceholderText="{Binding BrowserUrlPlaceholder}" />
+                        <TextBox Grid.Row="1" Grid.ColumnSpan="3" Text="{Binding NewComposePath}" PlaceholderText="{Binding ComposePathPlaceholder}" />
+                        <Button x:Name="BrowseComposePathButton" Grid.Row="1" Grid.Column="3" Content="{Binding BrowseFolderLabel}" IsEnabled="{Binding IsLocal}" />
+                        <Button x:Name="RegisterComposeButton" Grid.Row="1" Grid.Column="4" Content="{Binding RegisterLabel}" MinWidth="84" IsEnabled="{Binding CanChangeConnection}" />
+                    </Grid>
+                    <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto" RowSpacing="6" MinHeight="90" ClipToBounds="True">
+                        <Grid Grid.Row="0" ColumnDefinitions="2*,3*,2*,*,2*" ColumnSpacing="8" Margin="4,0">
+                            <TextBlock Text="{Binding NameLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="{Binding FolderPathLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="2" Text="{Binding ComposeStatusLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="3" Text="{Binding ComposeRunningCountLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="4" Text="{Binding WarningLabel}" FontWeight="SemiBold" />
+                        </Grid>
+                        <ListBox Grid.Row="1" ItemsSource="{Binding ComposeProjects}" SelectedItem="{Binding SelectedComposeProject}" MinHeight="60">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="model:ComposeProject">
+                                    <Grid ColumnDefinitions="2*,3*,2*,*,2*" ColumnSpacing="8" Margin="4,4">
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="1" Text="{Binding FolderPath}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
+                                            <ToolTip.Tip>
+                                                <TextBlock Text="{Binding FolderPath}" MaxWidth="700" TextWrapping="Wrap" />
+                                            </ToolTip.Tip>
+                                        </TextBlock>
+                                        <TextBlock Grid.Column="2" Text="{Binding Status}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Text="{Binding RunningCountLabel}" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="4" Text="{Binding Warning}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <WrapPanel Grid.Row="2" Orientation="Horizontal">
+                            <Button x:Name="StartComposeButton" Content="{Binding ComposeStartLabel}" IsEnabled="{Binding CanManageComposeProject}" />
+                            <Button x:Name="StopComposeButton" Content="{Binding ComposeStopLabel}" IsEnabled="{Binding CanManageComposeProject}" />
+                            <Button x:Name="RestartComposeButton" Content="{Binding ComposeRestartLabel}" IsEnabled="{Binding CanManageComposeProject}" />
+                            <Button x:Name="ComposeLogsButton" Content="{Binding ComposeLogsLabel}" IsEnabled="{Binding CanManageComposeProject}" />
+                            <Button x:Name="ComposeTerminalButton" Content="{Binding TerminalLabel}" IsEnabled="{Binding CanManageComposeProject}" />
+                            <CheckBox Content="{Binding FollowComposeLogsLabel}" IsChecked="{Binding FollowComposeLogs}" VerticalAlignment="Center" Margin="0,0,8,8" />
+                            <Button x:Name="OpenComposeBrowserButton" Content="{Binding BrowserButtonLabel}" IsEnabled="{Binding CanManageComposeProject}" />
+                            <Button x:Name="RemoveComposeProjectButton" Content="{Binding RemoveProjectLabel}" IsEnabled="{Binding CanManageComposeProject}" />
+                        </WrapPanel>
+                    </Grid>
+                    <GridSplitter Grid.Row="2" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                  Height="6" HorizontalAlignment="Stretch" Background="Transparent" />
+                    <TextBox Grid.Row="3" Text="{Binding ComposeLogText}" IsReadOnly="True" MinHeight="60"
+                             AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Code,Consolas,monospace"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="{Binding MonitoringLabel}">
+                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="8">
+                    <TextBlock Text="{Binding DockerStatsLabel}" FontSize="16" FontWeight="SemiBold" />
+                    <Grid Grid.Row="1" ColumnDefinitions="2*,*,2*,*,*,*" ColumnSpacing="8" Margin="4,0">
+                        <TextBlock Text="{Binding ContainerNameLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="1" Text="{Binding CpuLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="2" Text="{Binding MemoryLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="3" Text="{Binding MemoryPercentLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="4" Text="{Binding NetworkLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        <TextBlock Grid.Column="5" Text="{Binding StateLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                    </Grid>
+                    <ListBox Grid.Row="2" ItemsSource="{Binding Stats}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="model:ContainerStats">
+                                <Grid ColumnDefinitions="2*,*,2*,*,*,*" ColumnSpacing="8" Margin="4,8">
+                                    <TextBlock Text="{Binding Container}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Cpu}" Foreground="{Binding CpuBrush}" VerticalAlignment="Center" ToolTip.Tip="{Binding CpuStatus}" />
+                                    <TextBlock Grid.Column="2" Text="{Binding Memory}" Foreground="{Binding MemoryBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Column="3" Text="{Binding MemoryPercent}" Foreground="{Binding MemoryBrush}" VerticalAlignment="Center" ToolTip.Tip="{Binding MemoryStatus}" />
+                                    <TextBlock Grid.Column="4" Text="{Binding Network}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Column="5" Text="{Binding Status}" Foreground="{Binding StatusBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </TabItem>
+            <TabItem Header="{Binding SshLabel}">
+                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="12" Margin="8">
+                    <Grid ColumnDefinitions="*,*,100" ColumnSpacing="8">
+                        <TextBox Text="{Binding NewSshName}" PlaceholderText="{Binding NameLabel}" />
+                        <TextBox Grid.Column="1" Text="{Binding NewSshHost}" PlaceholderText="{Binding HostLabel}" />
+                        <TextBox Grid.Column="2" Text="{Binding NewSshPort}" PlaceholderText="{Binding PortLabel}" />
+                    </Grid>
+                    <Grid Grid.Row="1" ColumnDefinitions="*,2*,Auto,Auto" ColumnSpacing="8">
+                        <TextBox Text="{Binding NewSshUser}" PlaceholderText="{Binding UserLabel}" />
+                        <TextBox Grid.Column="1" Text="{Binding NewSshKey}" PlaceholderText="{Binding PrivateKeyPlaceholder}"
+                                 ToolTip.Tip="{Binding PrivateKeyHintLabel}" />
+                        <Button x:Name="BrowseSshKeyButton" Grid.Column="2" Content="{Binding BrowseFolderLabel}" />
+                        <ComboBox Grid.Column="3" ItemsSource="{Binding SshEngineOptions}" SelectedItem="{Binding NewSshEngine}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="model:ChoiceOption">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </Grid>
+                    <TextBlock Grid.Row="2" Text="{Binding PrivateKeyHintLabel}" FontSize="12" Foreground="Gray" TextWrapping="Wrap" />
+                    <Grid Grid.Row="3" RowDefinitions="Auto,*" RowSpacing="4">
+                        <Grid ColumnDefinitions="2*,2*,50,2*,70,2*,85" ColumnSpacing="8" Margin="4,0">
+                            <TextBlock Text="{Binding NameLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="{Binding HostLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="2" Text="{Binding PortLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="3" Text="{Binding UserLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="4" Text="{Binding EngineLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="5" Text="{Binding LastConnectedLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="6" Text="{Binding StateLabel}" FontWeight="SemiBold" />
+                        </Grid>
+                        <ListBox Grid.Row="1" ItemsSource="{Binding SshConnections}" SelectedItem="{Binding SelectedSshConnection}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="model:SshConnection">
+                                    <Grid ColumnDefinitions="2*,2*,50,2*,70,2*,85" ColumnSpacing="8" Margin="4,8">
+                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Host}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Host}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Port}" />
+                                        <TextBlock Grid.Column="3" Text="{Binding User}" TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Grid.Column="4" Text="{Binding Engine}" />
+                                        <TextBlock Grid.Column="5" Text="{Binding LastConnectedAt}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding LastConnectedAt}" />
+                                        <TextBlock Grid.Column="6" Text="{Binding ConnectionState}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding ConnectionState}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                    <WrapPanel Grid.Row="4" IsEnabled="{Binding CanChangeConnection}">
+                        <Button x:Name="SaveSshButton" Content="{Binding SaveSshLabel}" />
+                        <Button x:Name="TestSshButton" Content="{Binding TestConnectionLabel}" />
+                        <Button x:Name="ClearSshButton" Content="{Binding NewSshLabel}" />
+                        <Button x:Name="RemoveSshButton" Content="{Binding DeleteLabel}" />
+                    </WrapPanel>
+                </Grid>
+            </TabItem>
+        </TabControl>
+        </Grid>
+
+        <!-- サービス推定ダイアログ（モーダルオーバーレイ） -->
+        <Grid Background="#66000000" IsVisible="{Binding IsInferenceDialogOpen}"
+              HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="20" Margin="24"
+                    MaxWidth="520" MinWidth="360" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    BoxShadow="0 8 32 0 #40000000">
+                <StackPanel Spacing="16">
+                    <TextBlock Text="{Binding InferenceDialogTitle}" FontSize="17" FontWeight="Bold" />
+
+                    <!-- 推定できる材料がない場合 -->
+                    <TextBlock Text="{Binding InferenceNoMaterialText}" IsVisible="{Binding HasNoInferenceCandidates}"
+                               Foreground="Gray" Margin="0,4" />
+
+                    <!-- イメージ名から -->
+                    <StackPanel Spacing="4" IsVisible="{Binding HasImageCandidate}">
+                        <TextBlock Text="{Binding InferenceImageHeader}" FontWeight="SemiBold" FontSize="13" Foreground="Gray" />
+                        <TextBlock Text="{Binding ImageCandidateText}" Margin="8,0,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <!-- ポートから -->
+                    <StackPanel Spacing="4" IsVisible="{Binding HasPortCandidates}">
+                        <TextBlock Text="{Binding InferencePortsHeader}" FontWeight="SemiBold" FontSize="13" Foreground="Gray" />
+                        <ItemsControl ItemsSource="{Binding PortCandidatesTexts}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding}" Margin="8,2,0,2" TextWrapping="Wrap" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+
+                    <!-- 注記 -->
+                    <TextBlock Text="{Binding InferenceDialogNote}" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
+
+                    <!-- フッターボタン -->
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <Button x:Name="InferenceDialogRunDiagnosticsButton" Grid.Column="0"
+                                Content="{Binding DiagnosticsButtonLabel}"
+                                HorizontalAlignment="Left" Padding="12,6" />
+                        <Button x:Name="CloseInferenceDialogButton" Grid.Column="1"
+                                Content="{Binding CloseLabel}"
+                                HorizontalAlignment="Right" MinWidth="84" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- コンテナ内サービス診断ダイアログ（モーダルオーバーレイ） -->
+        <Grid Background="#66000000" IsVisible="{Binding IsDiagnosticsDialogOpen}"
+              HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="20" Margin="24"
+                    MaxWidth="640" MinWidth="420" MaxHeight="600" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    BoxShadow="0 8 32 0 #40000000">
+                <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="12">
+                    <!-- ヘッダー -->
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" VerticalAlignment="Center">
+                        <StackPanel Grid.Column="0" Spacing="2">
+                            <TextBlock Text="{Binding DiagnosticsDialogTitle}" FontSize="17" FontWeight="Bold" />
+                            <TextBlock Text="{Binding SelectedContainer.Name}" FontSize="12" Foreground="Gray" />
+                        </StackPanel>
+                        <Button x:Name="RerunDiagnosticsButton" Grid.Column="1"
+                                Content="{Binding RerunDiagnosticsLabel}"
+                                IsEnabled="{Binding !IsDiagnosing}"
+                                FontSize="12" Padding="8,4" VerticalAlignment="Center" />
+                    </Grid>
+
+                    <!-- メタ情報バー（対象サービス、走査行数、定義データ時点） -->
+                    <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                            CornerRadius="4" Padding="10,6">
+                        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" RowSpacing="2" VerticalAlignment="Center">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding DiagnosticsTargetServiceText}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DiagnosticsScannedLinesText}" FontSize="11" Foreground="Gray" VerticalAlignment="Center" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding DiagnosticsDefinitionDateText}" FontSize="11" Foreground="Gray" />
+                        </Grid>
+                    </Border>
+
+                    <!-- メインコンテンツ（診断中 / 所見あり / 所見なし） -->
+                    <ScrollViewer Grid.Row="2" MaxHeight="380" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="12">
+                            <!-- 診断中インジケーター -->
+                            <StackPanel Spacing="8" IsVisible="{Binding IsDiagnosing}" HorizontalAlignment="Center" Margin="0,30">
+                                <ProgressBar IsIndeterminate="True" Width="200" Height="4" />
+                                <TextBlock Text="{Binding DiagnosingLabel}" HorizontalAlignment="Center" Foreground="Gray" FontSize="12" />
+                            </StackPanel>
+
+                            <!-- 所見なし（目立つ異常なし） -->
+                            <Border IsVisible="{Binding HasNoDiagnosticsFindings}"
+                                    Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                                    BorderBrush="SeaGreen" BorderThickness="1" CornerRadius="6" Padding="16" Margin="0,8">
+                                <StackPanel Spacing="6">
+                                    <TextBlock Text="{Binding DiagnosticsNoAnomalyTitle}" FontWeight="Bold" FontSize="14" Foreground="SeaGreen" />
+                                    <TextBlock Text="{Binding DiagnosticsNoAnomalyMessage}" FontSize="12" TextWrapping="Wrap" Foreground="Gray" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- バージョン診断所見一覧 -->
+                            <StackPanel Spacing="6" IsVisible="{Binding HasDiagnosticsVersionFindings}">
+                                <TextBlock Text="{Binding VersionDiagnosticsHeader}" FontWeight="SemiBold" FontSize="12" Foreground="Gray" />
+                                <ItemsControl ItemsSource="{Binding DiagnosticsVersionFindingsList}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                                                    BorderBrush="{Binding SeverityBrush}" BorderThickness="1"
+                                                    CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                                                <StackPanel Spacing="6">
+                                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6" VerticalAlignment="Center">
+                                                        <TextBlock Grid.Column="0" Text="{Binding SeverityBadge}" FontSize="14" VerticalAlignment="Center" />
+                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Title}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                                            <TextBlock Text="{Binding SeverityText}" FontSize="11" Foreground="{Binding SeverityBrush}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </Grid>
+                                                    <TextBlock Text="{Binding Summary}" FontSize="12" TextWrapping="Wrap" Margin="22,0,0,0" />
+                                                    <StackPanel Spacing="3" Margin="22,4,0,0" IsVisible="{Binding HasEvidence}">
+                                                        <TextBlock Text="{Binding EvidenceLabel}" FontSize="11" FontWeight="SemiBold" Foreground="Gray" />
+                                                        <Border Background="#1E1E1E" CornerRadius="4" Padding="8,6">
+                                                            <TextBlock Text="{Binding EvidenceText}" FontFamily="Cascadia Code,Consolas,monospace"
+                                                                       FontSize="11" Foreground="#CCCCCC" TextWrapping="Wrap" />
+                                                        </Border>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+
+                            <!-- ログ・状態所見一覧 -->
+                            <StackPanel Spacing="6" IsVisible="{Binding HasDiagnosticsFindings}">
+                                <TextBlock Text="{Binding FindingsHeader}" FontWeight="SemiBold" FontSize="12" Foreground="Gray" />
+                                <ItemsControl ItemsSource="{Binding DiagnosticsFindingsList}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                                                    BorderBrush="{Binding SeverityBrush}" BorderThickness="1"
+                                                    CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                                                <StackPanel Spacing="6">
+                                                    <!-- タイトル行: バッジ + タイトル + 重大度ラベル + 件数 -->
+                                                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="6" VerticalAlignment="Center">
+                                                        <TextBlock Grid.Column="0" Text="{Binding SeverityBadge}" FontSize="14" VerticalAlignment="Center" />
+                                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Title}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding SeverityText}" FontSize="11" Foreground="{Binding SeverityBrush}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                        <TextBlock Grid.Column="2" Text="{Binding CountText}" FontSize="11" Foreground="Gray" VerticalAlignment="Center" />
+                                                    </Grid>
+
+                                                    <!-- 説明文 -->
+                                                    <TextBlock Text="{Binding Summary}" FontSize="12" TextWrapping="Wrap" Margin="22,0,0,0" />
+
+                                                    <!-- 根拠ログ抜粋 -->
+                                                    <StackPanel Spacing="3" Margin="22,4,0,0" IsVisible="{Binding HasEvidence}">
+                                                        <TextBlock Text="{Binding EvidenceLabel}" FontSize="11" FontWeight="SemiBold" Foreground="Gray" />
+                                                        <Border Background="#1E1E1E" CornerRadius="4" Padding="8,6">
+                                                            <TextBlock Text="{Binding EvidenceText}" FontFamily="Cascadia Code,Consolas,monospace"
+                                                                       FontSize="11" Foreground="#CCCCCC" TextWrapping="Wrap" />
+                                                        </Border>
+                                                    </StackPanel>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <!-- 注記 -->
+                    <TextBlock Grid.Row="3" Text="{Binding DiagnosticsNote}" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
+
+                    <!-- フッター閉じるボタン -->
+                    <Button x:Name="CloseDiagnosticsDialogButton" Grid.Row="4"
+                            Content="{Binding CloseLabel}"
+                            HorizontalAlignment="Right" MinWidth="84" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- アプリ情報（ℹ️）ダイアログ（モーダルオーバーレイ） -->
+        <Grid Background="#66000000" IsVisible="{Binding IsInfoDialogOpen}"
+              HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="20" Margin="24"
+                    MaxWidth="500" MinWidth="380" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    BoxShadow="0 8 32 0 #40000000">
+                <StackPanel Spacing="14">
+                    <!-- ヘッダー -->
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                        <Border Grid.Column="0" Width="36" Height="36" CornerRadius="8" ClipToBounds="True" VerticalAlignment="Center">
+                            <Image Source="/Assets/icon.jpg" Stretch="UniformToFill" />
+                        </Border>
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding AppTitle}" FontSize="17" FontWeight="Bold" />
+                            <TextBlock Text="{Binding InfoDialogTitle}" FontSize="11" Foreground="Gray" />
+                        </StackPanel>
+                        <Button x:Name="CloseInfoDialogXButton" Grid.Column="2" Content="✕"
+                                Width="30" Height="30" Padding="0" />
+                    </Grid>
+
+                    <Separator Height="1" />
+
+                    <!-- 現在のバージョンと最新バージョン（横並び表示） -->
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                            CornerRadius="6" Padding="12">
+                        <StackPanel Spacing="8">
+                            <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+                                <StackPanel Grid.Column="0" Spacing="2">
+                                    <TextBlock Text="{Binding CurrentVersionHeader}" FontSize="11" Foreground="Gray" />
+                                    <TextBlock Text="{Binding CurrentAppVersionText}" FontSize="15" FontWeight="Bold" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="2">
+                                    <TextBlock Text="{Binding LatestVersionHeader}" FontSize="11" Foreground="Gray" />
+                                    <TextBlock Text="{Binding LatestAppVersionText}" FontSize="15" FontWeight="Bold" />
+                                </StackPanel>
+                            </Grid>
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" IsVisible="{Binding IsAppOutdated}">
+                                <TextBlock Grid.Column="0" Text="{Binding AppUpdateAvailableText}"
+                                           FontSize="12" Foreground="#2563EB" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                <Button x:Name="OpenLatestVersionButton" Grid.Column="1"
+                                        Content="{Binding ViewLatestVersionLabel}"
+                                        IsVisible="{Binding HasStoreUpdateLink}"
+                                        FontSize="11" Padding="10,4" VerticalAlignment="Center" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 定義データ鮮度・手動更新 -->
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                            CornerRadius="6" Padding="12">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding DiagnosticsDefinitionDateText}" FontSize="12" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock Text="{Binding MasterDataUpdateStatus}" IsVisible="{Binding HasMasterDataUpdateStatus}"
+                                           FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <Button x:Name="UpdateMasterDataButton" Grid.Column="1"
+                                    Content="{Binding UpdateMasterDataButtonLabel}"
+                                    IsEnabled="{Binding !IsUpdatingMasterData}"
+                                    FontSize="12" Padding="10,6" VerticalAlignment="Center" />
+                        </Grid>
+                    </Border>
+
+                    <!-- 紹介サイト & Instagram リンク -->
+                    <StackPanel Spacing="8">
+                        <Button x:Name="OpenWebsiteButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="12,8">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <TextBlock Grid.Column="0" Text="🌐" FontSize="15" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding WebsiteButtonLabel}" FontSize="12" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding WebsiteUrlText}" FontSize="11" Foreground="Gray" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="2" Text="↗" FontSize="13" Foreground="Gray" VerticalAlignment="Center" />
+                            </Grid>
+                        </Button>
+                        <Button x:Name="OpenInstagramButton" HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Padding="12,8">
+                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+                                <TextBlock Grid.Column="0" Text="📷" FontSize="15" VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" Spacing="1" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding InstagramButtonLabel}" FontSize="12" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding InstagramUrlText}" FontSize="11" Foreground="Gray" TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="2" Text="↗" FontSize="13" Foreground="Gray" VerticalAlignment="Center" />
+                            </Grid>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- プライバシーポリシー注記 -->
+                    <TextBlock Text="{Binding PrivacyNoticeText}" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
+
+                    <!-- 閉じるボタン -->
+                    <Button x:Name="CloseInfoDialogButton"
+                            Content="{Binding CloseLabel}"
+                            HorizontalAlignment="Right" MinWidth="84" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+
+</Window>
