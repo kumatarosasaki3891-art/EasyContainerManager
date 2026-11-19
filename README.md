@@ -22,10 +22,26 @@
 
 ## 📸 画面イメージ / Screenshots
 
-<!-- ↓ GitHubの編集画面にスクリーンショット画像やデモ動画(.webm)をドラッグ＆ドロップして貼り付けてください -->
-| メイン画面（コンテナ一覧・公開ポート表示） | リソース監視・サービス／バージョン診断 |
+![コンテナ一覧（メイン画面）](docs/screenshots/easy_container_01.png)
+
+**コンテナ一覧（メイン画面）** — コンテナを一覧で管理。公開ポートの範囲も色で区別
+
+| サービス診断（所見あり） | サービス診断（異常なし） |
 | :---: | :---: |
-| *Screenshots coming soon* | *Screenshots coming soon* |
+| ![サービス診断（所見あり）](docs/screenshots/easy_container_02.png)<br>ログから異常を検出。根拠のログ行付きで表示します | ![サービス診断（異常なし）](docs/screenshots/easy_container_03.png)<br>異常がなければ、その旨を明示します |
+
+| サービス推定の詳細 | エンジン選択 |
+| :---: | :---: |
+| ![サービス推定の詳細](docs/screenshots/easy_container_04.png)<br>推定の根拠を、イメージ名とポートに分けて確認できます | ![エンジン選択](docs/screenshots/easy_container_05.png)<br>Docker / Podman / nerdctl に対応。起動時にエンジンを選択 |
+
+| Compose | 監視 |
+| :---: | :---: |
+| ![Compose](docs/screenshots/easy_container_06.png)<br>Compose プロジェクトの起動・停止とログ確認 | ![監視](docs/screenshots/easy_container_07.png)<br>CPU・メモリ・通信量を10秒ごとの自動更新で監視 |
+
+| SSH接続 | ダークモード |
+| :---: | :---: |
+| ![SSH接続](docs/screenshots/easy_container_08.png)<br>SSH リモート接続先の管理（鍵のパスだけを保持） | ![ダークモード](docs/screenshots/easy_container_10.png)<br>ライト／ダークテーマ対応 |
+
 
 ---
 

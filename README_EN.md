@@ -22,10 +22,29 @@ It also provides real-time resource monitoring, port exposure highlighting, and 
 
 ## 📸 Screenshots
 
-<!-- ↓ Drag and drop screenshot images or demo videos (.webm) here in the GitHub editor to attach them -->
-| Main Screen (Container List & Published Ports) | Resource Monitoring & Service / Version Diagnostics |
+![Main screen — container list](docs/screenshots/easy_container_01_en.png)
+
+**Main screen — container list** — Manage containers in one list — port exposure is color-coded
+
+| Service diagnostics (findings) | Service diagnostics (no findings) |
 | :---: | :---: |
-| *Screenshots coming soon* | *Screenshots coming soon* |
+| ![Service diagnostics (findings)](docs/screenshots/easy_container_02_en.png)<br>Log-based diagnostics, with the evidence lines for each finding | ![Service diagnostics (no findings)](docs/screenshots/easy_container_03_en.png)<br>When nothing is found, the result says so clearly |
+
+| Service inference details | Engine selection |
+| :---: | :---: |
+| ![Service inference details](docs/screenshots/easy_container_04_en.png)<br>See the basis of each inference, split by image and ports | ![Engine selection](docs/screenshots/easy_container_05_en.png)<br>Docker, Podman and nerdctl — choose your engine at startup |
+
+| Compose | Monitor |
+| :---: | :---: |
+| ![Compose](docs/screenshots/easy_container_06_en.png)<br>Start, stop and inspect Compose projects | ![Monitor](docs/screenshots/easy_container_07_en.png)<br>Monitor CPU, memory and network with 10-second auto-refresh |
+
+| SSH targets | Engine not running |
+| :---: | :---: |
+| ![SSH targets](docs/screenshots/easy_container_08_en.png)<br>Manage SSH targets — key paths only, no passwords stored | ![Engine not running](docs/screenshots/easy_container_09_en.png)<br>Guidance and a launch button when the engine is not running |
+
+| Dark mode |  |
+| :---: | :---: |
+| ![Dark mode](docs/screenshots/easy_container_10_en.png)<br>Light and dark themes |  |
 
 ---
 
