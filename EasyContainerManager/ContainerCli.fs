@@ -340,6 +340,36 @@ module ContainerCommand =
     /// <summary>コンテナ内で bash が利用可能か調べるコマンド引数を返す。</summary>
     let containerBashCheckArguments containerId = [ "exec"; containerId; "bash"; "-c"; "exit" ]
 
+    /// <summary>ローカル実行時に作業ディレクトリが存在するかを事前検証する。</summary>
+    let validateLocalWorkingDirectory (isRemote: bool) (workingDirectory: string option) (directoryExists: string -> bool) : Result<unit, string> =
+        match isRemote, workingDirectory with
+        | false, Some path when String.IsNullOrWhiteSpace(path) || not (directoryExists path) ->
+            Error (sprintf "指定されたフォルダが見つかりません: %s" path)
+        | _ -> Ok ()
+
+    /// <summary>プロセス起動時の例外内容（フォルダ不在・CLI未導入・権限不足・その他）を判別して正確なエラーメッセージを返す。</summary>
+    let describeStartException (runtime: ContainerRuntime) (isRemote: bool) (workingDirectory: string option) (directoryExists: string -> bool) (ex: exn) : string =
+        match ex with
+        | :? System.ComponentModel.Win32Exception as win32 ->
+            match isRemote, workingDirectory with
+            | false, Some path when String.IsNullOrWhiteSpace(path) || not (directoryExists path) ->
+                sprintf "指定されたフォルダが見つかりません: %s" path
+            | false, Some path when win32.NativeErrorCode = 267 || win32.NativeErrorCode = 20 ->
+                sprintf "作業フォルダが無効です: %s (%s)" path (win32.Message.Trim())
+            | _ ->
+                match win32.NativeErrorCode with
+                | 2 | 3 ->
+                    if isRemote then "SSHコマンドが見つかりません"
+                    else ContainerRuntime.displayName runtime + " CLIがインストールされていません"
+                | 5 | 13 ->
+                    if isRemote then "SSHの実行権限がありません"
+                    else ContainerRuntime.displayName runtime + "実行権限がありません"
+                | _ -> win32.Message.Trim()
+        | :? UnauthorizedAccessException ->
+            if isRemote then "SSHの実行権限がありません"
+            else ContainerRuntime.displayName runtime + "実行権限がありません"
+        | _ -> ex.Message.Trim()
+
 /// <summary>対話型ターミナルの起動コマンド生成と起動処理を行うモジュール。</summary>
 module TerminalCommand =
     /// <summary>コンテナ接続時に使用するシェル種別。</summary>
@@ -430,40 +460,41 @@ module TerminalCommand =
 /// <summary>Docker / Podman / nerdctl の各 CLI 操作（ローカルおよび SSH 経由）を実行するクライアント。</summary>
 type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
     let runtime = defaultArg runtime Docker
-    let mapError (message: string) = message.Trim()
+    let isRemote = connection.IsSome
     let makeStartInfo workingDirectory arguments = ContainerCommand.startInfo runtime connection workingDirectory arguments
     let jsonFormat = if runtime = Podman then "json" else "{{json .}}"
 
     /// <summary>指定ディレクトリと引数で CLI コマンドをキャンセル対応付きで非同期実行し、標準出力を返す。</summary>
     let executeAtWithCancel workingDirectory arguments (cancellationToken: System.Threading.CancellationToken option) = async {
-        try
-            use dockerProcess = new Process(StartInfo = makeStartInfo workingDirectory arguments)
-            dockerProcess.Start() |> ignore
-            let outputTask = dockerProcess.StandardOutput.ReadToEndAsync()
-            let errorTask = dockerProcess.StandardError.ReadToEndAsync()
-            let! cancelled = async {
-                try
-                    match cancellationToken with
-                    | Some token -> do! dockerProcess.WaitForExitAsync(token) |> Async.AwaitTask
-                    | None -> do! dockerProcess.WaitForExitAsync() |> Async.AwaitTask
-                    return false
-                with :? OperationCanceledException ->
+        match ContainerCommand.validateLocalWorkingDirectory isRemote workingDirectory Directory.Exists with
+        | Error message -> return Error message
+        | Ok () ->
+            try
+                use dockerProcess = new Process(StartInfo = makeStartInfo workingDirectory arguments)
+                dockerProcess.Start() |> ignore
+                let outputTask = dockerProcess.StandardOutput.ReadToEndAsync()
+                let errorTask = dockerProcess.StandardError.ReadToEndAsync()
+                let! cancelled = async {
                     try
-                        if not dockerProcess.HasExited then dockerProcess.Kill(true)
-                    with _ -> ()
-                    return true
-            }
-            if cancelled then
-                return Error "cancelled"
-            else
-                let! output = outputTask |> Async.AwaitTask
-                let! error = errorTask |> Async.AwaitTask
-                if dockerProcess.ExitCode = 0 then return Ok output
-                else return Error (if String.IsNullOrWhiteSpace(error) then output.Trim() else error.Trim())
-        with
-        | :? System.ComponentModel.Win32Exception -> return Error (ContainerRuntime.displayName runtime + " CLIがインストールされていません")
-        | :? UnauthorizedAccessException -> return Error (ContainerRuntime.displayName runtime + "実行権限がありません")
-        | ex -> return Error (mapError ex.Message)
+                        match cancellationToken with
+                        | Some token -> do! dockerProcess.WaitForExitAsync(token) |> Async.AwaitTask
+                        | None -> do! dockerProcess.WaitForExitAsync() |> Async.AwaitTask
+                        return false
+                    with :? OperationCanceledException ->
+                        try
+                            if not dockerProcess.HasExited then dockerProcess.Kill(true)
+                        with _ -> ()
+                        return true
+                }
+                if cancelled then
+                    return Error "cancelled"
+                else
+                    let! output = outputTask |> Async.AwaitTask
+                    let! error = errorTask |> Async.AwaitTask
+                    if dockerProcess.ExitCode = 0 then return Ok output
+                    else return Error (if String.IsNullOrWhiteSpace(error) then output.Trim() else error.Trim())
+            with ex ->
+                return Error (ContainerCommand.describeStartException runtime isRemote workingDirectory Directory.Exists ex)
     }
 
     /// <summary>指定ディレクトリと引数で CLI コマンドを非同期実行し、標準出力を返す。</summary>
@@ -473,25 +504,26 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
 
     /// <summary>出力を逐次コールバックへ通知しながら CLI コマンドを非同期実行する。</summary>
     let executeWithProgress workingDirectory arguments onProgress = async {
-        try
-            use dockerProcess = new Process(StartInfo = makeStartInfo workingDirectory arguments)
-            let errors = ConcurrentQueue<string>()
-            let report (eventArgs: DataReceivedEventArgs) =
-                if not (isNull eventArgs.Data) then
-                    errors.Enqueue(eventArgs.Data)
-                    onProgress eventArgs.Data
-            dockerProcess.OutputDataReceived.Add(report)
-            dockerProcess.ErrorDataReceived.Add(report)
-            dockerProcess.Start() |> ignore
-            dockerProcess.BeginOutputReadLine()
-            dockerProcess.BeginErrorReadLine()
-            do! dockerProcess.WaitForExitAsync() |> Async.AwaitTask
-            if dockerProcess.ExitCode = 0 then return Ok ()
-            else return Error (errors.ToArray() |> String.concat Environment.NewLine)
-        with
-        | :? System.ComponentModel.Win32Exception -> return Error (ContainerRuntime.displayName runtime + " CLIがインストールされていません")
-        | :? UnauthorizedAccessException -> return Error (ContainerRuntime.displayName runtime + "実行権限がありません")
-        | ex -> return Error (mapError ex.Message)
+        match ContainerCommand.validateLocalWorkingDirectory isRemote workingDirectory Directory.Exists with
+        | Error message -> return Error message
+        | Ok () ->
+            try
+                use dockerProcess = new Process(StartInfo = makeStartInfo workingDirectory arguments)
+                let errors = ConcurrentQueue<string>()
+                let report (eventArgs: DataReceivedEventArgs) =
+                    if not (isNull eventArgs.Data) then
+                        errors.Enqueue(eventArgs.Data)
+                        onProgress eventArgs.Data
+                dockerProcess.OutputDataReceived.Add(report)
+                dockerProcess.ErrorDataReceived.Add(report)
+                dockerProcess.Start() |> ignore
+                dockerProcess.BeginOutputReadLine()
+                dockerProcess.BeginErrorReadLine()
+                do! dockerProcess.WaitForExitAsync() |> Async.AwaitTask
+                if dockerProcess.ExitCode = 0 then return Ok ()
+                else return Error (errors.ToArray() |> String.concat Environment.NewLine)
+            with ex ->
+                return Error (ContainerCommand.describeStartException runtime isRemote workingDirectory Directory.Exists ex)
     }
 
     member _.IsRemote = connection.IsSome
@@ -621,6 +653,8 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
             with
             | :? System.ComponentModel.Win32Exception as error when error.NativeErrorCode = 2 || error.NativeErrorCode = 3 ->
                 return Error((if connection.IsSome then "sshMissing" else "cliMissing"), error.Message)
+            | :? System.ComponentModel.Win32Exception as error when error.NativeErrorCode = 5 || error.NativeErrorCode = 13 ->
+                return Error("permission", error.Message)
             | :? UnauthorizedAccessException as error -> return Error("permission", error.Message)
             | error -> return Error("unreachable", error.Message)
         }
@@ -632,39 +666,42 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
 
     /// <summary>指定コンテナのログ追尾（logs --follow）プロセスを開始する。</summary>
     member _.StartLogFollow(containerId: string, onLine: string -> unit) =
-        try
-            let startInfo = makeStartInfo None [ "logs"; "--follow"; "--tail"; "200"; containerId ]
-            let dockerProcess = new Process(StartInfo = startInfo, EnableRaisingEvents = true)
-            let report (eventArgs: DataReceivedEventArgs) =
-                if not (isNull eventArgs.Data) then onLine eventArgs.Data
-            dockerProcess.OutputDataReceived.Add(report)
-            dockerProcess.ErrorDataReceived.Add(report)
-            dockerProcess.Start() |> ignore
-            dockerProcess.BeginOutputReadLine()
-            dockerProcess.BeginErrorReadLine()
-            Ok dockerProcess
-        with
-        | :? System.ComponentModel.Win32Exception -> Error (ContainerRuntime.displayName runtime + " CLIがインストールされていません")
-        | :? UnauthorizedAccessException -> Error (ContainerRuntime.displayName runtime + "実行権限がありません")
-        | ex -> Error (mapError ex.Message)
+        match ContainerCommand.validateLocalWorkingDirectory isRemote None Directory.Exists with
+        | Error message -> Error message
+        | Ok () ->
+            try
+                let startInfo = makeStartInfo None [ "logs"; "--follow"; "--tail"; "200"; containerId ]
+                let dockerProcess = new Process(StartInfo = startInfo, EnableRaisingEvents = true)
+                let report (eventArgs: DataReceivedEventArgs) =
+                    if not (isNull eventArgs.Data) then onLine eventArgs.Data
+                dockerProcess.OutputDataReceived.Add(report)
+                dockerProcess.ErrorDataReceived.Add(report)
+                dockerProcess.Start() |> ignore
+                dockerProcess.BeginOutputReadLine()
+                dockerProcess.BeginErrorReadLine()
+                Ok dockerProcess
+            with ex ->
+                Error (ContainerCommand.describeStartException runtime isRemote None Directory.Exists ex)
 
     /// <summary>指定 Compose プロジェクトのログ追尾プロセスを開始する。</summary>
     member _.StartComposeLogFollow(folderPath: string, onLine: string -> unit) =
-        try
-            let startInfo = makeStartInfo (Some folderPath) [ "compose"; "logs"; "--follow"; "--tail"; "200" ]
-            let dockerProcess = new Process(StartInfo = startInfo, EnableRaisingEvents = true)
-            let report (eventArgs: DataReceivedEventArgs) =
-                if not (isNull eventArgs.Data) then onLine eventArgs.Data
-            dockerProcess.OutputDataReceived.Add(report)
-            dockerProcess.ErrorDataReceived.Add(report)
-            dockerProcess.Start() |> ignore
-            dockerProcess.BeginOutputReadLine()
-            dockerProcess.BeginErrorReadLine()
-            Ok dockerProcess
-        with
-        | :? System.ComponentModel.Win32Exception -> Error (ContainerRuntime.displayName runtime + " CLIがインストールされていません")
-        | :? UnauthorizedAccessException -> Error (ContainerRuntime.displayName runtime + "実行権限がありません")
-        | ex -> Error (mapError ex.Message)
+        let workingDirectory = Some folderPath
+        match ContainerCommand.validateLocalWorkingDirectory isRemote workingDirectory Directory.Exists with
+        | Error message -> Error message
+        | Ok () ->
+            try
+                let startInfo = makeStartInfo workingDirectory [ "compose"; "logs"; "--follow"; "--tail"; "200" ]
+                let dockerProcess = new Process(StartInfo = startInfo, EnableRaisingEvents = true)
+                let report (eventArgs: DataReceivedEventArgs) =
+                    if not (isNull eventArgs.Data) then onLine eventArgs.Data
+                dockerProcess.OutputDataReceived.Add(report)
+                dockerProcess.ErrorDataReceived.Add(report)
+                dockerProcess.Start() |> ignore
+                dockerProcess.BeginOutputReadLine()
+                dockerProcess.BeginErrorReadLine()
+                Ok dockerProcess
+            with ex ->
+                Error (ContainerCommand.describeStartException runtime isRemote workingDirectory Directory.Exists ex)
 
     /// <summary>ローカルまたはリモート上のイメージ一覧を取得する。</summary>
     member _.ListImages() = async {

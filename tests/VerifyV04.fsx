@@ -593,6 +593,67 @@ check "RemoveSshConnection deletes associated Compose projects from SQLite"
     (not (dbAfterSshRemove |> List.exists (fun p -> p.ConnectionId = "ssh-test-conn")))
 (sshVm :> IDisposable).Dispose()
 
+// 9. Working directory validation & accurate Win32Exception error reporting
+let missingComposeDir = Path.Combine(Path.GetTempPath(), "easycontainer-missing-" + Guid.NewGuid().ToString("N"))
+check "missing local working directory returns accurate folder-not-found error" (
+    match ContainerCommand.validateLocalWorkingDirectory false (Some missingComposeDir) (fun _ -> false) with
+    | Error msg -> msg.Contains("指定されたフォルダが見つかりません") && msg.Contains(missingComposeDir)
+    | Ok () -> false)
+check "existing local working directory passes validation" (
+    ContainerCommand.validateLocalWorkingDirectory false (Some "C:/existing") (fun _ -> true) = Ok ())
+check "remote working directory skips local Directory.Exists check" (
+    ContainerCommand.validateLocalWorkingDirectory true (Some "/srv/app") (fun _ -> false) = Ok ())
+check "Win32Exception(267) on missing folder does not misreport CLI missing" (
+    let msg =
+        ContainerCommand.describeStartException
+            Docker
+            false
+            (Some missingComposeDir)
+            (fun _ -> false)
+            (System.ComponentModel.Win32Exception(267, "The directory name is invalid."))
+    msg.Contains("指定されたフォルダが見つかりません") && not (msg.Contains("CLIがインストールされていません")))
+check "Win32Exception(2) without working directory reports local CLI missing" (
+    let msg =
+        ContainerCommand.describeStartException
+            Docker
+            false
+            None
+            Directory.Exists
+            (System.ComponentModel.Win32Exception(2, "No such file"))
+    msg = "Docker CLIがインストールされていません")
+check "Win32Exception(2) on remote connection reports SSH missing" (
+    let msg =
+        ContainerCommand.describeStartException
+            Docker
+            true
+            None
+            Directory.Exists
+            (System.ComponentModel.Win32Exception(2, "No such file"))
+    msg = "SSHコマンドが見つかりません")
+check "Win32Exception(5) reports permission error" (
+    let msg =
+        ContainerCommand.describeStartException
+            Docker
+            false
+            None
+            Directory.Exists
+            (System.ComponentModel.Win32Exception(5, "Access is denied."))
+    msg = "Docker実行権限がありません")
+check "other Win32Exception preserves underlying message" (
+    let msg =
+        ContainerCommand.describeStartException
+            Docker
+            false
+            None
+            Directory.Exists
+            (System.ComponentModel.Win32Exception(193, "Not a valid Win32 application."))
+    msg = "Not a valid Win32 application.")
+let missingComposeStatus = ContainerCli(runtime = Docker).GetComposeStatus(missingComposeDir) |> Async.RunSynchronously
+check "GetComposeStatus on missing directory returns folder-not-found without blaming CLI" (
+    match missingComposeStatus with
+    | Error msg -> msg.Contains("指定されたフォルダが見つかりません") && not (msg.Contains("CLIがインストールされていません"))
+    | Ok _ -> false)
+
 // クリーンアップ
 ComposeRepository.CustomDatabasePath <- None
 try if File.Exists(testDbPath) then File.Delete(testDbPath) with _ -> ()
