@@ -322,8 +322,22 @@ module Localization =
             "診断処理は端末内で完結します。バージョン定義データの取得時のみ GitHub へ通信し、ユーザーのデータや診断結果を送信することはありません。", [| "診断処理は端末内で完結します。バージョン定義データの取得時のみ GitHub へ通信し、ユーザーのデータや診断結果を送信することはありません。"; "Diagnostics run locally on your device. Network access is used only to fetch version definitions from GitHub; no user data or diagnostic results are sent."; "诊断处理完全在本地设备内完成。仅在获取版本定义数据时连接 GitHub，不会发送任何用户数据或诊断结果。"; "診斷處理完全在本機裝置內完成。僅在取得版本定義資料時連線至 GitHub，不會傳送任何使用者資料或診斷結果。"; "진단 처리는 기기 내에서 완료됩니다. 버전 정의 데이터를 가져올 때만 GitHub와 통신하며 사용자 데이터나 진단 결과를 전송하지 않습니다."; "Le diagnostic s’exécute localement. La connexion sert uniquement à récupérer les définitions sur GitHub ; aucune donnée utilisateur n’est envoyée."; "Die Diagnose läuft lokal auf Ihrem Gerät. Nur zum Abruf der Definitionsdaten wird GitHub kontaktiert; es werden keine Nutzerdaten gesendet."; "El diagnóstico se ejecuta localmente. Solo se conecta a GitHub para obtener definiciones; no se envían datos del usuario."; "La diagnosi viene eseguita in locale. La rete serve solo per scaricare le definizioni da GitHub; nessun dato utente viene inviato."; "O diagnóstico é executado localmente. A rede é usada apenas para obter definições do GitHub; nenhum dado do usuário é enviado."; "Диагностика выполняется локально. Сеть используется только для загрузки определений с GitHub; данные пользователя не отправляются." |]
         ]
 
+    let private operationLogTranslations =
+        Map.ofList [
+            "操作履歴", [| "操作履歴"; "Operation log"; "操作日志"; "操作記錄"; "작업 기록"; "Historique des opérations"; "Operationsprotokoll"; "Registro de operaciones"; "Registro operazioni"; "Histórico de operações"; "Журнал операций" |]
+            "操作履歴はまだありません。", [| "操作履歴はまだありません。"; "No operations recorded yet."; "暂无操作记录。"; "尚無操作記錄。"; "아직 작업 기록이 없습니다."; "Aucune opération enregistrée pour le moment."; "Noch keine Operationen aufgezeichnet."; "Aún no hay operaciones registradas."; "Nessuna operazione registrata."; "Nenhuma operação registrada ainda."; "Операций пока не зарегистрировано." |]
+            "コンテナ起動", [| "コンテナ起動"; "Start container"; "启动容器"; "啟動容器"; "컨테이너 시작"; "Démarrer le conteneur"; "Container starten"; "Iniciar contenedor"; "Avvia container"; "Iniciar contêiner"; "Запуск контейнера" |]
+            "コンテナ停止", [| "コンテナ停止"; "Stop container"; "停止容器"; "停止容器"; "컨테이너 중지"; "Arrêter le conteneur"; "Container stoppen"; "Detener contenedor"; "Ferma container"; "Parar contêiner"; "Остановка контейнера" |]
+            "コンテナ再起動", [| "コンテナ再起動"; "Restart container"; "重启容器"; "重新啟動容器"; "컨테이너 다시 시작"; "Redémarrer le conteneur"; "Container neu starten"; "Reiniciar contenedor"; "Riavvia container"; "Reiniciar contêiner"; "Перезапуск контейнера" |]
+            "コンテナ削除", [| "コンテナ削除"; "Delete container"; "删除容器"; "刪除容器"; "컨테이너 삭제"; "Supprimer le conteneur"; "Container löschen"; "Eliminar contenedor"; "Elimina container"; "Excluir contêiner"; "Удаление контейнера" |]
+            "コンテナ接続 (exec)", [| "コンテナ接続 (exec)"; "Enter container (exec)"; "进入容器 (exec)"; "進入容器 (exec)"; "컨테이너 접속 (exec)"; "Entrer dans le conteneur (exec)"; "Container öffnen (exec)"; "Entrar al contenedor (exec)"; "Entra nel container (exec)"; "Entrar no contêiner (exec)"; "Вход в контейнер (exec)" |]
+            "Compose 起動", [| "Compose 起動"; "Compose up"; "Compose 启动"; "Compose 啟動"; "Compose 시작"; "Compose démarrer (up)"; "Compose starten (up)"; "Compose iniciar (up)"; "Compose avvia (up)"; "Compose iniciar (up)"; "Compose запуск (up)" |]
+            "Compose 停止", [| "Compose 停止"; "Compose down"; "Compose 停止"; "Compose 停止"; "Compose 중지"; "Compose arrêter (down)"; "Compose stoppen (down)"; "Compose detener (down)"; "Compose ferma (down)"; "Compose parar (down)"; "Compose остановка (down)" |]
+            "Compose 再起動", [| "Compose 再起動"; "Compose restart"; "Compose 重启"; "Compose 重新啟動"; "Compose 다시 시작"; "Compose redémarrer"; "Compose neu starten"; "Compose reiniciar"; "Compose riavvia"; "Compose reiniciar"; "Compose перезапуск" |]
+        ]
+
     /// <summary>登録されているすべての翻訳テーブルを返す。</summary>
-    let private allMaps = [ versionAndInfoTranslations; monitoringTranslations; connectionTranslations; translations ]
+    let private allMaps = [ operationLogTranslations; versionAndInfoTranslations; monitoringTranslations; connectionTranslations; translations ]
 
     /// <summary>登録されているすべての翻訳キーを返す。</summary>
     let allKeys =

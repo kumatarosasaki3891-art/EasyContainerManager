@@ -10,6 +10,7 @@
 #load "../EasyContainerManager/Models/SshConnection.fs"
 #load "../EasyContainerManager/Models/ComposeProject.fs"
 #load "../EasyContainerManager/Models/ComposeRepository.fs"
+#load "../EasyContainerManager/Models/OperationLog.fs"
 #load "../EasyContainerManager/Models/MasterDataRepository.fs"
 #load "../EasyContainerManager/Models/VersionDiagnostics.fs"
 #load "../EasyContainerManager/AppSettings.fs"

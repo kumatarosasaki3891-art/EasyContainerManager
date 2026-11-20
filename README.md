@@ -57,6 +57,8 @@
 - **バージョン診断とローカル SQLite キャッシュ (`VersionDiagnostics.fs` / `MasterDataRepository.fs`)**
   - 公開マスターデータ（[`kuma-master-data`](https://github.com/kumatarosasaki3891-art/kuma-master-data)）と内蔵 SQLite キャッシュを用いて、エンジンやコンテナ内ランタイム（nginx / PHP / MySQL / MariaDB / PostgreSQL / Redis / httpd / Node.js / Python）のサポート終了（EOL）、パッチ遅れ、精選された緊急アドバイザリを照合します。
   - 診断処理は端末内で完結し、ユーザーデータや診断結果を外部へ送信しません。
+- **操作履歴のローカル記録 (`OperationLog.fs`)**
+  - コンテナの起動・停止・再起動・削除・シェル接続や Compose の起動・停止・再起動など、ユーザーが行った操作結果（成否・時刻・失敗理由）をアプリ内の SQLite（`operation_log`）にコンテナ／プロジェクト単位で直近 20 件まで記録し、詳細欄や診断ダイアログから確認できます（10 秒ごとの自動更新は記録しません）。
 - **リソース監視＆アプリ内警告通知**
   - コンテナ別の CPU・メモリ・通信量（Net I/O）および Compose プロジェクトの稼働数を監視し、閾値超過や異常時にアプリ内通知を行います。
 - **セキュアな SSH リモート管理 (`StrictHostKeyChecking=yes`)**
@@ -126,6 +128,7 @@ dotnet fsi tests/VerifyV04.fsx
 dotnet fsi tests/VerifyServiceInference.fsx
 dotnet fsi tests/VerifyServiceDiagnostics.fsx
 dotnet fsi tests/VerifyVersionDiagnostics.fsx
+dotnet fsi tests/VerifyOperationLog.fsx
 ```
 
 ### 2. MSIX パッケージのビルド（Windows / Microsoft Store 配信用）

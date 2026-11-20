@@ -36,7 +36,6 @@ type ServiceId =
     | Elasticsearch
     | Kibana
     | Prometheus
-    | Grafana
     | Ssh
     | Mail
     | Samba
@@ -81,23 +80,6 @@ module ServiceInference =
           11434, (Ollama, AiLlm, "Ollama", "Ollama") ]
         |> Map.ofList
 
-    // 各 ServiceId の代表ポート一覧
-    let private representativePorts = function
-        | WebServer -> [ 80; 443; 8080; 8443; 8000 ]
-        | Mysql -> [ 3306 ]
-        | Postgres -> [ 5432 ]
-        | Redis -> [ 6379 ]
-        | Mongo -> [ 27017 ]
-        | Elasticsearch -> [ 9200 ]
-        | Kibana -> [ 5601 ]
-        | Prometheus -> [ 9090 ]
-        | Grafana -> [ 3000 ]
-        | Ssh -> [ 22 ]
-        | Mail -> [ 25 ]
-        | Samba -> [ 445 ]
-        | Rdp -> [ 3389 ]
-        | Ollama -> [ 11434 ]
-
     // イメージ名キーワード辞書: キーワード -> (ServiceId, Category, サービス名)
     // 部分一致、大文字小文字無視。より具体的なキーワードを先頭に配置。
     let private imageKeywords =
@@ -112,7 +94,6 @@ module ServiceInference =
           "elasticsearch", (Elasticsearch, Database, "Elasticsearch")
           "kibana", (Kibana, Monitoring, "Kibana")
           "wordpress", (WebServer, Web, "WordPress")
-          "grafana", (Grafana, Monitoring, "Grafana")
           "prometheus", (Prometheus, Monitoring, "Prometheus")
           "ollama", (Ollama, AiLlm, "Ollama") ]
 
@@ -201,7 +182,6 @@ module ServiceInference =
                 []
             else
                 // イメージの代表ポートが公開されているか？
-                let imgRepPorts = representativePorts imgServiceId
                 let matchingPortBinding =
                     matchedPorts
                     |> List.tryFind (fun (sId, _, _, _, _, _) -> sId = imgServiceId)

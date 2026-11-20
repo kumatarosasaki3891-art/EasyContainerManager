@@ -10,6 +10,7 @@
 #load "../EasyContainerManager/Models/SshConnection.fs"
 #load "../EasyContainerManager/Models/ComposeProject.fs"
 #load "../EasyContainerManager/Models/ComposeRepository.fs"
+#load "../EasyContainerManager/Models/OperationLog.fs"
 #load "../EasyContainerManager/Models/MasterDataRepository.fs"
 #load "../EasyContainerManager/Models/VersionDiagnostics.fs"
 #load "../EasyContainerManager/AppSettings.fs"
@@ -256,6 +257,15 @@ check "switching to English updates dialog title and note" (
     && vm.ImageCandidateText.Contains("(Image: httpd:latest)")
 )
 vm.Language <- jaOption
+
+// 14. Grafana キーワード削除に伴うサイレント確認（3000番ポート除外との整合）
+let grafanaBinding = [ ContainerPortBinding("0.0.0.0", "3000", "3000/tcp") ]
+let grafanaInferred = ServiceInference.infer "grafana/grafana:latest" grafanaBinding
+check "grafana image with port 3000 is silent in infer" (List.isEmpty grafanaInferred)
+let grafanaCandidates = ServiceInference.inferCandidates "grafana/grafana:latest" grafanaBinding
+check "grafana image and port 3000 produce no inference candidates" (
+    grafanaCandidates.FromImage.IsNone && List.isEmpty grafanaCandidates.FromPorts
+)
 
 (vm :> IDisposable).Dispose()
 

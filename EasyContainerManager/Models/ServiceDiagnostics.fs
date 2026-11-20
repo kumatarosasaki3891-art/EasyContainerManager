@@ -486,7 +486,6 @@ module ServiceDiagnostics =
         | Elasticsearch -> "Elasticsearch"
         | Kibana -> "Kibana"
         | Prometheus -> "Prometheus"
-        | Grafana -> "Grafana"
         | Ssh -> "SSH"
         | Mail -> "Mail"
         | Samba -> "Samba"

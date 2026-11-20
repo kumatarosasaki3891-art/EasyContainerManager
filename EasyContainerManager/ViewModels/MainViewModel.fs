@@ -11,7 +11,21 @@ open EasyContainerManager
 open EasyContainerManager.Models
 
 /// <summary>メイン画面のコンテナ・イメージ・Compose・監視・SSH接続・設定を統括する ViewModel。</summary>
-type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?runtime: ContainerRuntime, ?composeLogsFetcher: (string -> int option -> System.Threading.CancellationToken -> Async<Result<string, string>>), ?masterDataFetcher: (string -> Async<Result<string, string>>), ?appVersionOverride: string) as this =
+type MainViewModel(
+    ?settingsOverride: AppSettings,
+    ?startAutomatically: bool,
+    ?runtime: ContainerRuntime,
+    ?composeLogsFetcher: (string -> int option -> System.Threading.CancellationToken -> Async<Result<string, string>>),
+    ?masterDataFetcher: (string -> Async<Result<string, string>>),
+    ?appVersionOverride: string,
+    ?containerActionRunner: (string -> string -> Async<Result<string, string>>),
+    ?composeActionRunner: (string -> string -> Async<Result<unit, string>>),
+    ?containerListFetcher: (unit -> Async<Result<ContainerInfo list, string>>),
+    ?imageListFetcher: (unit -> Async<Result<ImageInfo list, string>>),
+    ?composeStatusFetcher: (string -> Async<Result<ComposeSnapshot, string>>),
+    ?statsFetcher: (unit -> Async<Result<ContainerStats list, string>>),
+    ?connectionChecker: (unit -> Async<Result<unit, string * string>>)
+) as this =
     inherit ViewModelBase()
 
     let runtime = defaultArg runtime Docker
@@ -23,6 +37,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
     do
         ComposeRepository.Initialize()
         MasterDataRepository.Initialize()
+        OperationLogRepository.Initialize()
         if settings.ComposeProjects.Count > 0 then
             ComposeRepository.MigrateFrom(settings.ComposeProjects)
         let dbProjects = ComposeRepository.GetAll()
@@ -87,6 +102,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
     let mutable logText = localize "ログを表示するコンテナを選択してください。" "Select a container to view its logs."
     let mutable composeLogText = localize "Composeプロジェクトを選択してください。" "Select a Compose project."
     let mutable statusMessage = localize "コンテナを読み込み中..." "Loading containers..."
+    let mutable isErrorStatus = false
     let mutable isBusy = false
     let mutable autoRefresh = settings.AutoRefresh
     let mutable updatingContainerList = false
@@ -114,12 +130,15 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
     let mutable refreshing = false
     let mutable refreshCompletion: System.Threading.Tasks.TaskCompletionSource<unit> option = None
     let mutable pendingConnectionDetails: string option = None
+    let mutable pendingRefreshStatus: string option = None
     let mutable desktopLaunching = false
     let mutable isInferenceDialogOpen = false
     let mutable isDiagnosticsDialogOpen = false
     let mutable isDiagnosing = false
     let mutable currentDiagnosticsResult: DiagnosticsResult option = None
     let mutable currentVersionFindings: DiagnosticFinding list = []
+    let mutable selectedContainerOperationLogs: OperationLogEntry list = []
+    let mutable selectedComposeOperationLogs: OperationLogEntry list = []
     let mutable masterDataSnapshot = MasterDataRepository.GetSnapshot()
     let mutable isInfoDialogOpen = false
     let mutable isUpdatingMasterData = false
@@ -192,8 +211,11 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
         | None -> ()
 
     /// <summary>コンテナ一覧を再取得し、選択状態を維持したままコレクションを同期する。</summary>
-    let refreshCore () = async {
-        let! result = docker.ListContainers()
+    let refreshCore () : Async<bool> = async {
+        let! result =
+            match containerListFetcher with
+            | Some fetcher -> fetcher()
+            | None -> docker.ListContainers()
         match result with
         | Ok items ->
             let selectedId = if isNull selectedContainer then None else Some selectedContainer.Id
@@ -232,13 +254,25 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                 this.SelectedContainer <- null
                 this.ShowLogs(localize "選択中のコンテナは一覧から削除されました。" "The selected container is no longer available.")
             | None -> ()
-            this.ShowStatus(format "{0}件のコンテナ" "{0} containers" [| box containers.Count |])
-        | Error message -> this.ShowStatus(localizeDockerError message)
+            let okMsg = format "{0}件のコンテナ" "{0} containers" [| box containers.Count |]
+            if refreshing then
+                pendingRefreshStatus <- Some okMsg
+                if not isErrorStatus then this.ShowStatus(okMsg)
+            else
+                this.ShowStatus(okMsg)
+                this.SetConnectionDetails("")
+            return true
+        | Error message ->
+            this.ShowErrorStatus(localizeDockerError message)
+            return false
     }
 
     /// <summary>イメージ一覧を再取得してコレクションを更新する。</summary>
-    let refreshImagesCore () = async {
-        let! result = docker.ListImages()
+    let refreshImagesCore () : Async<bool> = async {
+        let! result =
+            match imageListFetcher with
+            | Some fetcher -> fetcher()
+            | None -> docker.ListImages()
         match result with
         | Ok items ->
             let selectedId = if isNull selectedImage then None else Some selectedImage.Id
@@ -261,21 +295,35 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                 | _ -> ()
             | Some _ -> this.SelectedImage <- null
             | None -> ()
-            this.ShowStatus(format "{0}件のイメージ" "{0} images" [| box images.Count |])
-        | Error message -> this.ShowStatus(localizeDockerError message)
+            let okMsg = format "{0}件のイメージ" "{0} images" [| box images.Count |]
+            if refreshing then
+                pendingRefreshStatus <- Some okMsg
+                if not isErrorStatus then this.ShowStatus(okMsg)
+            else
+                this.ShowStatus(okMsg)
+                this.SetConnectionDetails("")
+            return true
+        | Error message ->
+            this.ShowErrorStatus(localizeDockerError message)
+            return false
     }
 
     /// <summary>登録済み Compose プロジェクトの稼働状態を更新し、異常があれば通知を発行する。</summary>
-    let refreshComposeStatuses () = async {
+    let refreshComposeStatuses () : Async<bool> = async {
+        let mutable allSucceeded = true
         for project in composeProjects |> Seq.toArray do
             project.LanguageCode <- languageCode
-            let! result = composeCli.GetComposeStatus(project.FolderPath)
+            let! result =
+                match composeStatusFetcher with
+                | Some fetcher -> fetcher project.FolderPath
+                | None -> composeCli.GetComposeStatus(project.FolderPath)
             match result with
             | Ok snapshot ->
                 project.UpdateSnapshot(snapshot)
             | Error message ->
+                allSucceeded <- false
                 project.UpdateStatus("unknown", 0)
-                this.ShowStatus(localizeDockerError message)
+                this.ShowErrorStatus(localizeDockerError message)
         let alerts =
             composeProjects
             |> Seq.filter (fun project -> project.StatusKey = "partial" || (project.StatusKey = "stopped" && project.TotalContainerCount > 0))
@@ -284,11 +332,18 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                 sprintf "%s: %s (%s) %s" project.Name project.Status project.RunningCountLabel project.Warning)
             |> Seq.toList
         for notification in composeAlerts.Update(notificationsEnabled, alerts) do alertRaised.Trigger(notification)
+        if allSucceeded && not refreshing then
+            this.ClearErrorStatus()
+            if dockerDesktopState = "running" then this.SetConnectionDetails("")
+        return allSucceeded
     }
 
     /// <summary>選択中接続先のコンテナエンジン疎通を確認し、切断時は一覧をクリアする。</summary>
     let refreshDockerEngineStatus () = async {
-        let! result = docker.CheckConnection()
+        let! result =
+            match connectionChecker with
+            | Some checker -> checker()
+            | None -> docker.CheckConnection()
         if connectionId <> "local" then
             match settings.SshConnections |> Seq.tryFind (fun connection -> connection.Id = connectionId) with
             | Some connection ->
@@ -325,8 +380,11 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
     }
 
     /// <summary>コンテナごとの CPU・メモリ・ネットワーク統計を更新し、しきい値超過時に通知を発行する。</summary>
-    let refreshStatsCore () = async {
-        let! result = docker.ListStats()
+    let refreshStatsCore () : Async<bool> = async {
+        let! result =
+            match statsFetcher with
+            | Some fetcher -> fetcher()
+            | None -> docker.ListStats()
         match result with
         | Ok items ->
             let incomingMap = items |> List.map (fun (item: ContainerStats) -> item.Container, item) |> Map.ofList
@@ -347,10 +405,12 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                       if item.MemoryLevel = 2 then
                           yield "memory:" + item.Container, localize "高メモリ使用率" "High memory usage", sprintf "%s: %s (%s)" item.Container item.Memory item.MemoryPercent ])
             for notification in resourceAlerts.Update(notificationsEnabled, alerts) do alertRaised.Trigger(notification)
+            return true
         | Error message ->
             stats.Clear()
             for container in containers do container.UpdateResources(None)
-            this.ShowStatus(localizeDockerError message)
+            this.ShowErrorStatus(localizeDockerError message)
+            return false
     }
 
     /// <summary>ダッシュボード全体（接続状態・コンテナ・イメージ・Compose・統計）を一括更新する。</summary>
@@ -360,20 +420,31 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
             let completion = System.Threading.Tasks.TaskCompletionSource<unit>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously)
             refreshCompletion <- Some completion
             pendingConnectionDetails <- None
+            pendingRefreshStatus <- None
             this.NotifyActivity()
             try
                 let wasConnected = dockerDesktopState = "running"
                 let! connected = refreshDockerEngineStatus()
                 if connected then
-                    do! refreshCore()
-                    if includeImages || not wasConnected then do! refreshImagesCore()
-                    do! refreshComposeStatuses()
-                    do! refreshStatsCore()
+                    let! containersOk = refreshCore()
+                    let! imagesOk =
+                        if includeImages || not wasConnected then refreshImagesCore()
+                        else async.Return true
+                    let! composeOk = refreshComposeStatuses()
+                    let! statsOk = refreshStatsCore()
+                    if containersOk && imagesOk && composeOk && statsOk then
+                        match pendingRefreshStatus with
+                        | Some msg -> this.ShowStatus(msg)
+                        | None -> this.ClearErrorStatus()
+                        this.SetConnectionDetails("")
                 elif connectionId = "local" && localComposeRuntime <> runtime then
-                    do! refreshComposeStatuses()
+                    let! composeOk = refreshComposeStatuses()
+                    if composeOk then
+                        this.ClearErrorStatus()
             finally
                 try
                     refreshing <- false
+                    pendingRefreshStatus <- None
                     pendingConnectionDetails |> Option.iter this.SetConnectionDetails
                     pendingConnectionDetails <- None
                     this.NotifyActivity()
@@ -403,15 +474,22 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                 match current with
                 | None -> this.ShowStatus(localize "選択したコンテナは一覧にありません。" "The selected container is no longer available.")
                 | Some _ when dockerDesktopState <> "running" ->
-                    this.ShowStatus(localize "コンテナエンジンに接続できません。" "Cannot connect to the container engine.")
+                    this.ShowErrorStatus(localize "コンテナエンジンに接続できません。" "Cannot connect to the container engine.")
                 | Some item when action = "削除" &&
                                  not (item.Status.StartsWith("Exited", StringComparison.OrdinalIgnoreCase)
                                       || item.Status.StartsWith("Created", StringComparison.OrdinalIgnoreCase)) ->
                     this.ShowStatus(localize "停止済みコンテナのみ削除できます" "Only stopped containers can be removed.")
                 | Some _ ->
-                    let! result = docker.RunContainerAction(action, container.Id)
+                    let! result =
+                        match containerActionRunner with
+                        | Some runner -> runner action container.Id
+                        | None -> docker.RunContainerAction(action, container.Id)
+                    let opKey = OperationLog.mapContainerAction action
                     match result with
                     | Ok _ ->
+                        OperationLogRepository.Record(container.Id, container.Name, opKey, true)
+                        this.RefreshSelectedContainerOperationLogs()
+                        this.SetConnectionDetails("")
                         if action = "削除" then stopLogFollow()
                         let englishAction =
                             match action with
@@ -420,8 +498,12 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                             | "再起動" -> "restarted"
                             | _ -> "removed"
                         this.ShowStatus(format "コンテナ {0} に{1}しました" "Container {0} {1}." [| box container.Name; box (localize action englishAction) |])
-                        do! refreshCore()
-                    | Error message -> this.ShowStatus(localizeDockerError message)
+                        let! _ = refreshCore()
+                        ()
+                    | Error message ->
+                        OperationLogRepository.Record(container.Id, container.Name, opKey, false, detail = message)
+                        this.RefreshSelectedContainerOperationLogs()
+                        this.ShowErrorStatus(localizeDockerError message)
             finally
                 container.IsOperating <- false
                 this.SetBusy(false)
@@ -443,9 +525,11 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                     Dispatcher.UIThread.Post(Action(fun () -> this.ShowStatus(line))))
                 match result with
                 | Ok () ->
+                    this.SetConnectionDetails("")
                     this.ShowStatus(format "{0} の取得が完了しました" "Pulled {0} successfully." [| box imageReference |])
-                    do! refreshImagesCore()
-                | Error message -> this.ShowStatus(localizeDockerError message)
+                    let! _ = refreshImagesCore()
+                    ()
+                | Error message -> this.ShowErrorStatus(localizeDockerError message)
             finally
                 isPullingImage <- false
                 this.SetBusy(false)
@@ -465,9 +549,11 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                     let! result = docker.RemoveImage(image.Id)
                     match result with
                     | Ok _ ->
+                        this.SetConnectionDetails("")
                         this.ShowStatus(format "イメージ {0} を削除しました" "Removed image {0}." [| box image.Reference |])
-                        do! refreshImagesCore()
-                    | Error message -> this.ShowStatus(localizeDockerError message)
+                        let! _ = refreshImagesCore()
+                        ()
+                    | Error message -> this.ShowErrorStatus(localizeDockerError message)
                 else
                     this.ShowStatus(localize "選択したイメージは一覧にありません。" "The selected image is no longer available.")
             finally
@@ -488,7 +574,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                     if selectedComposeProject = project && followComposeLogs then this.AppendComposeLog(line)))
             match composeCli.StartComposeLogFollow(project.FolderPath, onLine) with
             | Ok streamProcess -> composeLogProcess <- Some streamProcess
-            | Error message -> this.ShowStatus(localizeDockerError message)
+            | Error message -> this.ShowErrorStatus(localizeDockerError message)
         else
             let cts = new System.Threading.CancellationTokenSource()
             composeLogCts <- Some cts
@@ -509,7 +595,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                         this.ShowComposeLogs(if String.IsNullOrWhiteSpace(output) then localize "ログはありません。" "No logs available." else output)
                         this.ShowStatus(format "{0} のComposeログを表示中" "Showing Compose logs for {0}." [| box project.Name |])
                     | Error message when message = "cancelled" -> ()
-                    | Error message -> this.ShowStatus(localizeDockerError message)
+                    | Error message -> this.ShowErrorStatus(localizeDockerError message)
             finally
                 match composeLogCts with
                 | Some current when obj.ReferenceEquals(current, cts) -> composeLogCts <- None
@@ -534,20 +620,32 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                 else
                     if action = "停止" then stopComposeLogFollow()
                     let! result =
-                        if action = "起動" || action = "停止" then
-                            composeCli.RunComposeActionWithProgress(action, project.FolderPath, fun line ->
-                                Dispatcher.UIThread.Post(Action(fun () -> this.ShowStatus(line))))
-                        else
-                            async {
-                                let! output = composeCli.RunComposeAction(action, project.FolderPath)
-                                return output |> Result.map ignore
-                            }
+                        match composeActionRunner with
+                        | Some runner -> runner action project.FolderPath
+                        | None ->
+                            if action = "起動" || action = "停止" then
+                                composeCli.RunComposeActionWithProgress(action, project.FolderPath, fun line ->
+                                    Dispatcher.UIThread.Post(Action(fun () -> this.ShowStatus(line))))
+                            else
+                                async {
+                                    let! output = composeCli.RunComposeAction(action, project.FolderPath)
+                                    return output |> Result.map ignore
+                                }
+                    let opKey = OperationLog.mapComposeAction action
+                    let targetId = OperationLog.composeTargetId project.Id
                     match result with
                     | Ok () ->
+                        OperationLogRepository.Record(targetId, project.Name, opKey, true)
+                        this.RefreshSelectedComposeOperationLogs()
+                        this.SetConnectionDetails("")
                         let englishAction = if action = "起動" then "started" elif action = "停止" then "stopped" else "restarted"
                         this.ShowStatus(format "{0} を{1}しました" "{0} {1}." [| box project.Name; box (localize action englishAction) |])
-                        do! refreshComposeStatuses()
-                    | Error message -> this.ShowStatus(localizeDockerError message)
+                        let! _ = refreshComposeStatuses()
+                        ()
+                    | Error message ->
+                        OperationLogRepository.Record(targetId, project.Name, opKey, false, detail = message)
+                        this.RefreshSelectedComposeOperationLogs()
+                        this.ShowErrorStatus(localizeDockerError message)
             finally
                 project.IsOperating <- false
                 this.SetBusy(false)
@@ -612,7 +710,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                     this.NewComposePath <- ""
                     this.NewComposeUrl <- ""
                     this.ShowComposeLogs(localize "Composeプロジェクトを選択してください。" "Select a Compose project.")
-                    if defaultArg startAutomatically true then refreshComposeStatuses() |> Async.StartImmediate
+                    if defaultArg startAutomatically true then async { let! _ = refreshComposeStatuses() in () } |> Async.StartImmediate
                 | _ -> ()
             this.OnPropertyChanged(nameof this.SelectedComposeEngine)
 
@@ -785,7 +883,9 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                       nameof this.InferredServicesLabel; nameof this.InferredServicesNote; nameof this.InferredServicesText
                       nameof this.InferenceDialogTitle; nameof this.InferenceImageHeader; nameof this.InferencePortsHeader
                       nameof this.InferenceNoMaterialText; nameof this.InferenceDialogNote; nameof this.CloseLabel
-                      nameof this.InferenceDetailButtonLabel; nameof this.ImageCandidateText; nameof this.PortCandidatesTexts ] do
+                      nameof this.InferenceDetailButtonLabel; nameof this.ImageCandidateText; nameof this.PortCandidatesTexts
+                      nameof this.OperationLogHeader; nameof this.OperationLogEmptyText
+                      nameof this.SelectedContainerOperationLogs; nameof this.SelectedComposeOperationLogs ] do
                     this.OnPropertyChanged(propertyName)
                 this.NotifyDiagnosticsProperties()
                 this.NotifyInfoProperties()
@@ -816,6 +916,16 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
     member _.DeleteLabel = localize "削除" "Delete"
     member _.FollowLogsLabel = localize "ログを追尾" "Follow logs"
     member _.ContainerLogsLabel = localize "コンテナログ" "Container logs"
+    member _.OperationLogHeader = localize "操作履歴" "Operation log"
+    member _.OperationLogEmptyText = localize "操作履歴はまだありません。" "No operations recorded yet."
+    member _.SelectedContainerOperationLogs : OperationLogDisplayItem list =
+        selectedContainerOperationLogs |> List.map (fun entry -> OperationLogDisplayItem(entry, languageCode))
+    member _.HasSelectedContainerOperationLogs = not (List.isEmpty selectedContainerOperationLogs)
+    member _.HasNoSelectedContainerOperationLogs = not (isNull selectedContainer) && List.isEmpty selectedContainerOperationLogs
+    member _.SelectedComposeOperationLogs : OperationLogDisplayItem list =
+        selectedComposeOperationLogs |> List.map (fun entry -> OperationLogDisplayItem(entry, languageCode))
+    member _.HasSelectedComposeOperationLogs = not (List.isEmpty selectedComposeOperationLogs)
+    member _.HasNoSelectedComposeOperationLogs = not (isNull selectedComposeProject) && List.isEmpty selectedComposeOperationLogs
     member _.InferredServicesLabel = localize "推定サービス" "Likely services"
     member _.InferredServicesNote = localize "イメージ名とポートからの推定です。実際と異なる場合があります" "Inferred from the image name and ports; may differ from the actual services."
     member this.HasInferredServices = not (isNull selectedContainer) && not (String.IsNullOrWhiteSpace(this.InferredServicesText))
@@ -1164,7 +1274,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
             try
                 Process.Start(ProcessStartInfo(url, UseShellExecute = true)) |> ignore
             with ex ->
-                this.ShowStatus(format "ブラウザを起動できませんでした: {0}" "Could not open the browser: {0}" [| box ex.Message |])
+                this.ShowErrorStatus(format "ブラウザを起動できませんでした: {0}" "Could not open the browser: {0}" [| box ex.Message |])
 
     member this.OpenWebsite() = this.OpenExternalUrl(websiteUrl)
     member this.OpenInstagram() = this.OpenExternalUrl(instagramUrl)
@@ -1386,7 +1496,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                             if String.IsNullOrWhiteSpace(details) then agentHint
                             else details + Environment.NewLine + agentHint
                         this.SetConnectionDetails(detailedMessage)
-                        this.ShowStatus(localize "🔴 接続失敗" "🔴 Connection failed")
+                        this.ShowErrorStatus(localize "🔴 接続失敗" "🔴 Connection failed")
                 finally
                     this.SetBusy(false)
     }
@@ -1424,6 +1534,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                     this.IsInferenceDialogOpen <- false
                     this.IsDiagnosticsDialogOpen <- false
                 this.NotifyDiagnosticsProperties()
+                this.RefreshSelectedContainerOperationLogs()
                 if not updatingContainerList then
                     match value with
                     | null ->
@@ -1432,7 +1543,8 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                     | selected ->
                         stopLogFollow()
                         this.ShowLogs(format "{0} のログを読み込みます..." "Loading logs for {0}..." [| box selected.Name |])
-                        this.LoadLogsAsync(selected) |> Async.StartImmediate
+                        if defaultArg startAutomatically true then
+                            this.LoadLogsAsync(selected) |> Async.StartImmediate
 
     /// <summary>一覧で現在選択されているコンテナイメージモデル。</summary>
     member this.SelectedImage
@@ -1452,6 +1564,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                 cancelComposeLogFetch()
                 composeLogRequestVersion <- composeLogRequestVersion + 1
                 this.OnPropertyChanged(nameof this.CanManageComposeProject)
+                this.RefreshSelectedComposeOperationLogs()
                 match value with
                 | null ->
                     this.ShowComposeLogs(localize "Composeプロジェクトを選択してください。" "Select a Compose project.")
@@ -1472,6 +1585,9 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
 
     /// <summary>ステータスバーに表示されるメッセージ文字列。</summary>
     member _.StatusMessage = statusMessage
+
+    /// <summary>現在のステータスメッセージが操作エラー表示中かどうか。</summary>
+    member _.IsErrorStatus = isErrorStatus
 
     /// <summary>変更系コマンドや接続テストなどの処理中フラグ。</summary>
     member _.IsBusy = isBusy
@@ -1683,11 +1799,11 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                     this.NewComposeUrl <- ""
                     this.ShowStatus(format "{0} を登録しました" "Registered {0}." [| box project.Name |])
                     this.RefreshComposeProjectsAsync() |> Async.StartImmediate
-        with ex -> this.ShowStatus(format "登録に失敗しました: {0}" "Registration failed: {0}" [| box ex.Message |])
+        with ex -> this.ShowErrorStatus(format "登録に失敗しました: {0}" "Registration failed: {0}" [| box ex.Message |])
 
     /// <summary>フォルダ／ファイル選択ダイアログの失敗メッセージをステータスへ表示する。</summary>
     member _.ReportFolderPickerError(message: string) =
-        this.ShowStatus(
+        this.ShowErrorStatus(
             sprintf "%s %s"
                 (localize "フォルダ選択ダイアログを開けませんでした。" "Could not open the folder picker.")
                 message)
@@ -1714,19 +1830,27 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
         | project ->
             try
                 Process.Start(ProcessStartInfo(project.BrowserUrl, UseShellExecute = true)) |> ignore
-            with ex -> this.ShowStatus(format "ブラウザを起動できませんでした: {0}" "Could not open the browser: {0}" [| box ex.Message |])
+            with ex -> this.ShowErrorStatus(format "ブラウザを起動できませんでした: {0}" "Could not open the browser: {0}" [| box ex.Message |])
 
-    /// <summary>指定フォルダまたはコンテナを対象に、ローカルまたは SSH 先の対話型ターミナルを開く。</summary>
-    member private _.OpenTerminal(folderPath: string option, container: (string * TerminalCommand.ContainerShell) option) =
+    /// <summary>指定フォルダまたはコンテナを対象に、ローカルまたは SSH 先の対話型ターミナルを開き、成否を返す。</summary>
+    member private this.OpenTerminalWithResult(folderPath: string option, container: (string * TerminalCommand.ContainerShell) option) : Result<unit, string> =
         let connection =
             if connectionId = "local" then None
             else settings.SshConnections |> Seq.tryFind (fun connection -> connection.Id = connectionId)
         if connectionId <> "local" && connection.IsNone then
-            this.ShowStatus(localize "SSH接続先が見つかりません。" "SSH connection was not found.")
+            let message = localize "SSH接続先が見つかりません。" "SSH connection was not found."
+            this.ShowErrorStatus(message)
+            Error message
         else
             match TerminalCommand.start activeRuntime connection folderPath container with
-            | Ok () -> ()
-            | Error message -> this.ShowStatus(format "ターミナルを起動できませんでした: {0}" "Could not open the terminal: {0}" [| box message |])
+            | Ok () -> Ok ()
+            | Error message ->
+                this.ShowErrorStatus(format "ターミナルを起動できませんでした: {0}" "Could not open the terminal: {0}" [| box message |])
+                Error message
+
+    /// <summary>指定フォルダまたはコンテナを対象に、ローカルまたは SSH 先の対話型ターミナルを開く。</summary>
+    member private this.OpenTerminal(folderPath: string option, container: (string * TerminalCommand.ContainerShell) option) =
+        this.OpenTerminalWithResult(folderPath, container) |> ignore
 
     /// <summary>接続先ホストのシェルを対話型ターミナルで開く。</summary>
     member _.OpenHostTerminal() = this.OpenTerminal(None, None)
@@ -1743,14 +1867,20 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                     if not (containers |> Seq.exists (fun item -> item.Id = container.Id)) then
                         this.ShowStatus(localize "選択したコンテナは一覧にありません。" "The selected container is no longer available.")
                     elif dockerDesktopState <> "running" then
-                        this.ShowStatus(localize "コンテナエンジンに接続できません。" "Cannot connect to the container engine.")
+                        this.ShowErrorStatus(localize "コンテナエンジンに接続できません。" "Cannot connect to the container engine.")
                     else
                         let! result = docker.CheckContainerBash(container.Id)
                         match result with
                         | Error details ->
                             this.ShowStatus(format "bashの確認に失敗したためshを試します: {0}" "Bash check failed; trying sh: {0}" [| box details |])
                         | Ok _ -> ()
-                        this.OpenTerminal(None, Some(container.Id, TerminalCommand.shellForProbe result))
+                        match this.OpenTerminalWithResult(None, Some(container.Id, TerminalCommand.shellForProbe result)) with
+                        | Ok () ->
+                            OperationLogRepository.Record(container.Id, container.Name, "exec", true)
+                            this.RefreshSelectedContainerOperationLogs()
+                        | Error message ->
+                            OperationLogRepository.Record(container.Id, container.Name, "exec", false, detail = message)
+                            this.RefreshSelectedContainerOperationLogs()
                 finally
                     container.IsOperating <- false
                     this.SetBusy(false)
@@ -1821,10 +1951,45 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
     member private this.RefreshDockerDesktopState() =
         this.SetDockerDesktopStateInternal(dockerDesktopState, true)
 
+    /// <summary>選択中コンテナの操作履歴一覧を再読込して通知する。</summary>
+    member private this.RefreshSelectedContainerOperationLogs() =
+        selectedContainerOperationLogs <-
+            if isNull selectedContainer || String.IsNullOrWhiteSpace(selectedContainer.Id) then []
+            else OperationLogRepository.GetByContainerId(selectedContainer.Id)
+        this.OnPropertyChanged(nameof this.SelectedContainerOperationLogs)
+        this.OnPropertyChanged(nameof this.HasSelectedContainerOperationLogs)
+        this.OnPropertyChanged(nameof this.HasNoSelectedContainerOperationLogs)
+
+    /// <summary>選択中 Compose プロジェクトの操作履歴一覧を再読込して通知する。</summary>
+    member private this.RefreshSelectedComposeOperationLogs() =
+        selectedComposeOperationLogs <-
+            if isNull selectedComposeProject || String.IsNullOrWhiteSpace(selectedComposeProject.Id) then []
+            else OperationLogRepository.GetByContainerId(OperationLog.composeTargetId selectedComposeProject.Id)
+        this.OnPropertyChanged(nameof this.SelectedComposeOperationLogs)
+        this.OnPropertyChanged(nameof this.HasSelectedComposeOperationLogs)
+        this.OnPropertyChanged(nameof this.HasNoSelectedComposeOperationLogs)
+
     /// <summary>画面上部のステータスメッセージを更新する。</summary>
     member private this.ShowStatus(message: string) =
+        let wasError = isErrorStatus
         statusMessage <- message
+        if wasError then
+            isErrorStatus <- false
+            this.OnPropertyChanged(nameof this.IsErrorStatus)
         this.OnPropertyChanged(nameof this.StatusMessage)
+
+    /// <summary>画面上部のエラー系ステータスメッセージを更新する。</summary>
+    member private this.ShowErrorStatus(message: string) =
+        let wasError = isErrorStatus
+        statusMessage <- message
+        if not wasError then
+            isErrorStatus <- true
+            this.OnPropertyChanged(nameof this.IsErrorStatus)
+        this.OnPropertyChanged(nameof this.StatusMessage)
+
+    /// <summary>エラー系のステータスメッセージが表示中であればクリアする。</summary>
+    member private this.ClearErrorStatus() =
+        if isErrorStatus then this.ShowStatus("")
 
     /// <summary>コンテナログ欄のテキストを置き換える。</summary>
     member private this.ShowLogs(message: string) =
@@ -1859,7 +2024,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
             | Ok streamProcess ->
                 logProcess <- Some streamProcess
                 this.ShowStatus(format "{0} のログを追尾中" "Following logs for {0}" [| box container.Name |])
-            | Error message -> this.ShowStatus(localizeDockerError message)
+            | Error message -> this.ShowErrorStatus(localizeDockerError message)
             async.Return(())
         else
             async {
@@ -1869,7 +2034,7 @@ type MainViewModel(?settingsOverride: AppSettings, ?startAutomatically: bool, ?r
                     | Ok output ->
                         this.ShowLogs(if String.IsNullOrWhiteSpace(output) then localize "ログはありません。" "No logs available." else output)
                         this.ShowStatus(format "{0} のログを表示中" "Showing logs for {0}" [| box container.Name |])
-                    | Error message -> this.ShowStatus(localizeDockerError message)
+                    | Error message -> this.ShowErrorStatus(localizeDockerError message)
             }
 
     interface IDisposable with

@@ -28,6 +28,7 @@
     <Compile Include="Models\SshConnection.fs" />
     <Compile Include="Models\ComposeProject.fs" />
     <Compile Include="Models\ComposeRepository.fs" />
+    <Compile Include="Models\OperationLog.fs" />
     <Compile Include="Models\MasterDataRepository.fs" />
     <Compile Include="Models\VersionDiagnostics.fs" />
     <Compile Include="AppSettings.fs" />

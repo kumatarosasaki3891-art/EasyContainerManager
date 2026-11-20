@@ -183,12 +183,54 @@
                     </Grid>
                     <GridSplitter Grid.Row="1" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                                   Height="6" HorizontalAlignment="Stretch" Background="Transparent" />
-                    <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="4" MinHeight="60">
-                        <TextBlock Grid.Row="0" Text="{Binding ContainerLogsLabel}" FontSize="16" FontWeight="SemiBold" />
-                        <TextBox Grid.Row="1" Text="{Binding LogText}" IsReadOnly="True"
-                                 AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Code,Consolas,monospace"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
-                                 ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                    <Grid Grid.Row="2" ColumnDefinitions="3*,Auto,2*" ColumnSpacing="4" MinHeight="60">
+                        <Grid Grid.Column="0" RowDefinitions="Auto,*" RowSpacing="4" MinWidth="220">
+                            <TextBlock Grid.Row="0" Text="{Binding ContainerLogsLabel}" FontSize="16" FontWeight="SemiBold" />
+                            <TextBox Grid.Row="1" Text="{Binding LogText}" IsReadOnly="True"
+                                     AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Code,Consolas,monospace"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                        </Grid>
+                        <GridSplitter Grid.Column="1" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                      Width="6" VerticalAlignment="Stretch" Background="Transparent" />
+                        <Grid Grid.Column="2" RowDefinitions="Auto,*" RowSpacing="4" MinWidth="200">
+                            <TextBlock Grid.Row="0" Text="{Binding OperationLogHeader}" FontSize="16" FontWeight="SemiBold" />
+                            <Border Grid.Row="1"
+                                    Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                    BorderThickness="1" CornerRadius="4" Padding="8,6">
+                                <Grid>
+                                    <TextBlock Text="{Binding OperationLogEmptyText}"
+                                               IsVisible="{Binding HasNoSelectedContainerOperationLogs}"
+                                               Foreground="Gray" FontSize="12" TextWrapping="Wrap"
+                                               VerticalAlignment="Top" />
+                                    <ScrollViewer IsVisible="{Binding HasSelectedContainerOperationLogs}"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding SelectedContainerOperationLogs}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="model:OperationLogDisplayItem">
+                                                    <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                                            BorderThickness="0,0,0,1" Padding="0,4">
+                                                        <StackPanel Spacing="2">
+                                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                                                <TextBlock Grid.Column="0" Text="{Binding ExecutedAtText}" FontSize="11" Foreground="Gray"
+                                                                           FontFamily="Cascadia Code,Consolas,monospace" VerticalAlignment="Center" />
+                                                                <TextBlock Grid.Column="1" Text="{Binding OperationText}" FontSize="12"
+                                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                                <TextBlock Grid.Column="2" Text="{Binding ResultMark}" Foreground="{Binding ResultBrush}"
+                                                                           FontWeight="Bold" FontSize="13" VerticalAlignment="Center" />
+                                                            </Grid>
+                                                            <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}"
+                                                                       FontSize="11" Foreground="Crimson" TextWrapping="Wrap" Margin="4,0,0,0" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+                        </Grid>
                     </Grid>
                 </Grid>
             </TabItem>
@@ -282,10 +324,52 @@
                     </Grid>
                     <GridSplitter Grid.Row="2" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
                                   Height="6" HorizontalAlignment="Stretch" Background="Transparent" />
-                    <TextBox Grid.Row="3" Text="{Binding ComposeLogText}" IsReadOnly="True" MinHeight="60"
-                             AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Code,Consolas,monospace"
-                             ScrollViewer.VerticalScrollBarVisibility="Auto"
-                             ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                    <Grid Grid.Row="3" ColumnDefinitions="3*,Auto,2*" ColumnSpacing="4" MinHeight="60">
+                        <TextBox Grid.Column="0" Text="{Binding ComposeLogText}" IsReadOnly="True" MinWidth="220"
+                                 AcceptsReturn="True" TextWrapping="NoWrap" FontFamily="Cascadia Code,Consolas,monospace"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Auto" />
+                        <GridSplitter Grid.Column="1" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                                      Width="6" VerticalAlignment="Stretch" Background="Transparent" />
+                        <Grid Grid.Column="2" RowDefinitions="Auto,*" RowSpacing="4" MinWidth="200">
+                            <TextBlock Grid.Row="0" Text="{Binding OperationLogHeader}" FontSize="14" FontWeight="SemiBold" />
+                            <Border Grid.Row="1"
+                                    Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                    BorderThickness="1" CornerRadius="4" Padding="8,6">
+                                <Grid>
+                                    <TextBlock Text="{Binding OperationLogEmptyText}"
+                                               IsVisible="{Binding HasNoSelectedComposeOperationLogs}"
+                                               Foreground="Gray" FontSize="12" TextWrapping="Wrap"
+                                               VerticalAlignment="Top" />
+                                    <ScrollViewer IsVisible="{Binding HasSelectedComposeOperationLogs}"
+                                                  VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding SelectedComposeOperationLogs}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="model:OperationLogDisplayItem">
+                                                    <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                                            BorderThickness="0,0,0,1" Padding="0,4">
+                                                        <StackPanel Spacing="2">
+                                                            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                                                <TextBlock Grid.Column="0" Text="{Binding ExecutedAtText}" FontSize="11" Foreground="Gray"
+                                                                           FontFamily="Cascadia Code,Consolas,monospace" VerticalAlignment="Center" />
+                                                                <TextBlock Grid.Column="1" Text="{Binding OperationText}" FontSize="12"
+                                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                                <TextBlock Grid.Column="2" Text="{Binding ResultMark}" Foreground="{Binding ResultBrush}"
+                                                                           FontWeight="Bold" FontSize="13" VerticalAlignment="Center" />
+                                                            </Grid>
+                                                            <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}"
+                                                                       FontSize="11" Foreground="Crimson" TextWrapping="Wrap" Margin="4,0,0,0" />
+                                                        </StackPanel>
+                                                    </Border>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
                 </Grid>
             </TabItem>
 
@@ -541,6 +625,35 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
+                            </StackPanel>
+
+                            <!-- コンテナ操作履歴 -->
+                            <StackPanel Spacing="6" IsVisible="{Binding HasSelectedContainerOperationLogs}">
+                                <TextBlock Text="{Binding OperationLogHeader}" FontWeight="SemiBold" FontSize="12" Foreground="Gray" />
+                                <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                                        CornerRadius="6" Padding="10,6">
+                                    <ItemsControl ItemsSource="{Binding SelectedContainerOperationLogs}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="model:OperationLogDisplayItem">
+                                                <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                                        BorderThickness="0,0,0,1" Padding="0,4">
+                                                    <StackPanel Spacing="2">
+                                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                                            <TextBlock Grid.Column="0" Text="{Binding ExecutedAtText}" FontSize="11" Foreground="Gray"
+                                                                       FontFamily="Cascadia Code,Consolas,monospace" VerticalAlignment="Center" />
+                                                            <TextBlock Grid.Column="1" Text="{Binding OperationText}" FontSize="12"
+                                                                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                            <TextBlock Grid.Column="2" Text="{Binding ResultMark}" Foreground="{Binding ResultBrush}"
+                                                                       FontWeight="Bold" FontSize="13" VerticalAlignment="Center" />
+                                                        </Grid>
+                                                        <TextBlock Text="{Binding Detail}" IsVisible="{Binding HasDetail}"
+                                                                   FontSize="11" Foreground="Crimson" TextWrapping="Wrap" Margin="4,0,0,0" />
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Border>
                             </StackPanel>
                         </StackPanel>
                     </ScrollViewer>

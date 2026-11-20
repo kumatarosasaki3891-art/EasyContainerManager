@@ -60,6 +60,8 @@ It also provides real-time resource monitoring, port exposure highlighting, and 
 - **Version Diagnostics & Local SQLite Cache (`VersionDiagnostics.fs` / `MasterDataRepository.fs`)**
   - Uses public definition data ([`kuma-master-data`](https://github.com/kumatarosasaki3891-art/kuma-master-data)) cached in a local SQLite database to check container engines (`docker`, `podman`, `nerdctl`) and container runtimes (`nginx`, `php`, `mysql`, `mariadb`, `postgres`, `redis`, `httpd`, `node`, `python`) for End-of-Life (EOL) branches, version lag, and curated critical advisories.
   - All diagnostics execute locally on your device; no user data or diagnostic results are ever sent externally.
+- **Per-Target Operation History (`OperationLog.fs`)**
+  - Records user-initiated container actions (start, stop, restart, remove, exec) and Compose actions (up, down, restart) with timestamp, status (`✓`/`✗`), and brief error details in local SQLite (`operation_log`, up to 20 newest entries per container or Compose project), displayed alongside logs and in the diagnostics dialog (background auto-refresh polling is excluded).
 - **Resource Monitoring & In-App Alerts**
   - Tracks per-container CPU, memory, and network I/O along with Compose stack health, showing in-app notifications when thresholds or failures occur.
 - **Secure SSH Remote Management (`StrictHostKeyChecking=yes`)**
@@ -129,6 +131,7 @@ dotnet fsi tests/VerifyV04.fsx
 dotnet fsi tests/VerifyServiceInference.fsx
 dotnet fsi tests/VerifyServiceDiagnostics.fsx
 dotnet fsi tests/VerifyVersionDiagnostics.fsx
+dotnet fsi tests/VerifyOperationLog.fsx
 ```
 
 ### 2. Build MSIX Package (Windows / Microsoft Store)
