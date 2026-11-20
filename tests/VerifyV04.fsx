@@ -654,6 +654,101 @@ check "GetComposeStatus on missing directory returns folder-not-found without bl
     | Error msg -> msg.Contains("指定されたフォルダが見つかりません") && not (msg.Contains("CLIがインストールされていません"))
     | Ok _ -> false)
 
+// 10. Flatpak host-spawn wrapping and bare command-name delegation
+check "executableFor in Flatpak uses bare command names without path search" (
+    ContainerRuntime.executableFor true Docker = "docker"
+    && ContainerRuntime.executableFor true Podman = "podman"
+    && ContainerRuntime.executableFor true Nerdctl = "nerdctl")
+
+let flatpakLocal = ContainerCommand.startInfoFor true Docker None None [ "ps"; "-a" ]
+check "local Docker command in Flatpak runs via flatpak-spawn --host" (
+    flatpakLocal.FileName = "flatpak-spawn"
+    && flatpakLocal.WorkingDirectory = "/"
+    && not flatpakLocal.UseShellExecute
+    && Seq.toList flatpakLocal.ArgumentList = [ "--host"; "docker"; "ps"; "-a" ])
+
+let flatpakPodmanCompose = ContainerCommand.startInfoFor true Podman None (Some "/home/user/app") [ "compose"; "ps" ]
+check "local Podman Compose in Flatpak passes --directory and --env via flatpak-spawn --host" (
+    flatpakPodmanCompose.FileName = "flatpak-spawn"
+    && flatpakPodmanCompose.WorkingDirectory = "/"
+    && Seq.toList flatpakPodmanCompose.ArgumentList = [
+        "--host"
+        "--directory=/home/user/app"
+        "--env=PODMAN_COMPOSE_WARNING_LOGS=false"
+        "--env=NO_COLOR=1"
+        "--env=COMPOSE_ANSI=never"
+        "podman"
+        "compose"
+        "ps"
+    ])
+
+let flatpakRemote = SshConnection(Name = "FlatpakSSH", Host = "192.0.2.50", Port = 22, User = "dev", PrivateKeyPath = "")
+let flatpakSsh = ContainerCommand.startInfoFor true Docker (Some flatpakRemote) None [ "ps" ]
+let flatpakSshArgs = Seq.toList flatpakSsh.ArgumentList
+check "SSH command in Flatpak runs via flatpak-spawn --host ssh" (
+    flatpakSsh.FileName = "flatpak-spawn"
+    && flatpakSsh.WorkingDirectory = "/"
+    && flatpakSshArgs.Length >= 3
+    && flatpakSshArgs.[0] = "--host"
+    && flatpakSshArgs.[1] = "ssh"
+    && flatpakSshArgs.[2] = "-T")
+
+let flatpakSshTest = ContainerCommand.sshTestStartInfoFor true Docker flatpakRemote
+let flatpakSshTestArgs = Seq.toList flatpakSshTest.ArgumentList
+check "SSH connection test in Flatpak runs via flatpak-spawn --host ssh with echo OK" (
+    flatpakSshTest.FileName = "flatpak-spawn"
+    && flatpakSshTest.WorkingDirectory = "/"
+    && flatpakSshTestArgs.[0] = "--host"
+    && flatpakSshTestArgs.[1] = "ssh"
+    && List.last flatpakSshTestArgs = "echo OK")
+
+let flatpakTermExe, flatpakTermArgs, flatpakTermDir =
+    TerminalCommand.targetFor true Docker None None (Some("cid", TerminalCommand.Bash))
+check "terminal target in Flatpak uses bare engine command name" (
+    flatpakTermExe = "docker"
+    && flatpakTermArgs = [ "exec"; "-it"; "cid"; "bash" ]
+    && flatpakTermDir.IsNone)
+
+let flatpakLinuxTerminal =
+    TerminalCommand.linuxStartInfo
+        true
+        (function "gnome-terminal" -> Some "gnome-terminal" | _ -> None)
+        "docker"
+        [ "exec"; "-it"; "cid"; "bash" ]
+        (Some "/home/user/app")
+check "Linux terminal in Flatpak launches gnome-terminal via flatpak-spawn --host" (
+    flatpakLinuxTerminal.FileName = "flatpak-spawn"
+    && flatpakLinuxTerminal.WorkingDirectory = "/"
+    && not flatpakLinuxTerminal.UseShellExecute
+    && Seq.toList flatpakLinuxTerminal.ArgumentList = [
+        "--host"
+        "gnome-terminal"
+        "--working-directory"
+        "/home/user/app"
+        "--"
+        "docker"
+        "exec"
+        "-it"
+        "cid"
+        "bash"
+    ])
+
+let hostLinuxTerminal =
+    TerminalCommand.linuxStartInfo
+        false
+        (function "konsole" -> Some "/usr/bin/konsole" | _ -> None)
+        "/bin/sh"
+        []
+        (Some "/home/user/app")
+check "Linux terminal outside Flatpak launches terminal directly without flatpak-spawn" (
+    hostLinuxTerminal.FileName = "/usr/bin/konsole"
+    && Seq.toList hostLinuxTerminal.ArgumentList = [ "--workdir"; "/home/user/app"; "-e"; "/bin/sh" ])
+
+let directLocal = ContainerCommand.startInfoFor false Docker None None [ "ps" ]
+check "local Docker command outside Flatpak does not use flatpak-spawn" (
+    directLocal.FileName <> "flatpak-spawn"
+    && Seq.toList directLocal.ArgumentList = [ "ps" ])
+
 // クリーンアップ
 ComposeRepository.CustomDatabasePath <- None
 try if File.Exists(testDbPath) then File.Delete(testDbPath) with _ -> ()

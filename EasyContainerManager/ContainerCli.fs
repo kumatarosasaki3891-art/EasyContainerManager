@@ -13,6 +13,41 @@ type ContainerRuntime =
     | Podman
     | Nerdctl
 
+/// <summary>Flatpak サンドボックス内で動作しているかを判定し、ホスト側コマンド実行用の ProcessStartInfo を組み立てるモジュール。</summary>
+module FlatpakHost =
+    /// <summary>/.flatpak-info の存在によって Flatpak サンドボックス内実行かを判定する。</summary>
+    let isRunningInFlatpak () =
+        not (OperatingSystem.IsWindows()) && File.Exists("/.flatpak-info")
+
+    /// <summary>実行環境に応じて直接または flatpak-spawn --host 経由の ProcessStartInfo を生成する。</summary>
+    let createStartInfo (inFlatpak: bool) (executable: string) (workingDirectory: string option) (environmentVars: (string * string) list) (arguments: string list) : ProcessStartInfo =
+        let startInfo = ProcessStartInfo(if inFlatpak then "flatpak-spawn" else executable)
+        startInfo.UseShellExecute <- false
+        startInfo.CreateNoWindow <- true
+        startInfo.RedirectStandardOutput <- true
+        startInfo.RedirectStandardError <- true
+        if inFlatpak then
+            startInfo.WorkingDirectory <- "/"
+            startInfo.ArgumentList.Add("--host")
+            match workingDirectory with
+            | Some path when not (String.IsNullOrWhiteSpace(path)) ->
+                startInfo.ArgumentList.Add("--directory=" + path)
+            | _ -> ()
+            for (key, value) in environmentVars do
+                startInfo.ArgumentList.Add(sprintf "--env=%s=%s" key value)
+            startInfo.ArgumentList.Add(executable)
+            for argument in arguments do
+                startInfo.ArgumentList.Add(argument)
+        else
+            for (key, value) in environmentVars do
+                startInfo.Environment.[key] <- value
+            match workingDirectory with
+            | Some path -> startInfo.WorkingDirectory <- path
+            | None -> ()
+            for argument in arguments do
+                startInfo.ArgumentList.Add(argument)
+        startInfo
+
 /// <summary>コンテナランタイムのコマンド解決とインストール検出を行うモジュール。</summary>
 module ContainerRuntime =
     /// <summary>ランタイムに対応する CLI コマンド名を返す。</summary>
@@ -104,17 +139,18 @@ module ContainerRuntime =
     let resolveExecutable fallback candidates =
         candidates |> List.tryFind File.Exists |> Option.defaultValue fallback
 
+    /// <summary>ランタイム実行ファイルのパスを環境（ホスト / Flatpak）に応じて解決して返す。</summary>
+    let executableFor (inFlatpak: bool) runtime =
+        if inFlatpak then command runtime
+        else resolveExecutable (command runtime) (executableCandidates runtime)
+
     /// <summary>ランタイム実行ファイルのパスを解決して返す。</summary>
-    let executable runtime = resolveExecutable (command runtime) (executableCandidates runtime)
+    let executable runtime = executableFor (FlatpakHost.isRunningInFlatpak()) runtime
 
     /// <summary>指定された実行ファイルパスで --version を試行し、ランタイムが応答するか判定する。</summary>
-    let private probeExecutable runtime candidatePath =
+    let private probeExecutableFor (inFlatpak: bool) runtime candidatePath =
         try
-            let startInfo = ProcessStartInfo(candidatePath, "--version")
-            startInfo.UseShellExecute <- false
-            startInfo.CreateNoWindow <- true
-            startInfo.RedirectStandardOutput <- true
-            startInfo.RedirectStandardError <- true
+            let startInfo = FlatpakHost.createStartInfo inFlatpak candidatePath None [] [ "--version" ]
             use engineProcess = new Process(StartInfo = startInfo)
             if engineProcess.Start() then
                 let exited = engineProcess.WaitForExit(8000)
@@ -124,17 +160,20 @@ module ContainerRuntime =
                 else
                     try engineProcess.Kill(true) with _ -> ()
                     // 実在する既定インストール先バイナリが初回起動遅延等でタイムアウトした場合、ファイル実在をもって導入済みとみなす
-                    File.Exists(candidatePath) && FileInfo(candidatePath).Length > 0L
+                    if inFlatpak then false else File.Exists(candidatePath) && FileInfo(candidatePath).Length > 0L
             else false
         with _ -> false
 
     /// <summary>--version 実行によってランタイム CLI が利用可能か判定する。</summary>
     let isInstalled runtime =
-        let existing = executableCandidates runtime |> List.filter File.Exists
-        if List.isEmpty existing then
-            probeExecutable runtime (command runtime)
+        if FlatpakHost.isRunningInFlatpak() then
+            probeExecutableFor true runtime (command runtime)
         else
-            existing |> List.exists (probeExecutable runtime)
+            let existing = executableCandidates runtime |> List.filter File.Exists
+            if List.isEmpty existing then
+                probeExecutableFor false runtime (command runtime)
+            else
+                existing |> List.exists (probeExecutableFor false runtime)
 
     /// <summary>現在インストールされているランタイム一覧を検出する。</summary>
     let detectInstalled () = all |> List.filter isInstalled
@@ -293,23 +332,18 @@ module ContainerCommand =
     /// <summary>リモートシェル用に引数をシングルクォートで安全にエスケープする。</summary>
     let quoteShell (value: string) = "'" + value.Replace("'", "'\\''") + "'"
 
-    /// <summary>ローカルまたは SSH 経由のコンテナ CLI 実行用 ProcessStartInfo を生成する。</summary>
-    let startInfo runtime (connection: SshConnection option) workingDirectory arguments =
-        let startInfo = ProcessStartInfo(if connection.IsSome then "ssh" else ContainerRuntime.executable runtime)
-        startInfo.UseShellExecute <- false
-        startInfo.CreateNoWindow <- true
-        startInfo.RedirectStandardOutput <- true
-        startInfo.RedirectStandardError <- true
+    /// <summary>実行環境（Flatpak / 直接）を指定してコンテナ CLI 実行用 ProcessStartInfo を生成する。</summary>
+    let startInfoFor (inFlatpak: bool) runtime (connection: SshConnection option) workingDirectory arguments =
         match connection with
         | None ->
-            if runtime = Podman then
-                startInfo.Environment.["PODMAN_COMPOSE_WARNING_LOGS"] <- "false"
-                startInfo.Environment.["NO_COLOR"] <- "1"
-                startInfo.Environment.["COMPOSE_ANSI"] <- "never"
-            match workingDirectory with
-            | Some path -> startInfo.WorkingDirectory <- path
-            | None -> ()
-            for argument in arguments do startInfo.ArgumentList.Add(argument)
+            let executable = ContainerRuntime.executableFor inFlatpak runtime
+            let envVars =
+                if runtime = Podman then
+                    [ "PODMAN_COMPOSE_WARNING_LOGS", "false"
+                      "NO_COLOR", "1"
+                      "COMPOSE_ANSI", "never" ]
+                else []
+            FlatpakHost.createStartInfo inFlatpak executable workingDirectory envVars arguments
         | Some remote ->
             match remote.Validate() with
             | Error message -> invalidArg "connection" message
@@ -322,20 +356,27 @@ module ContainerCommand =
             let keyArguments =
                 if String.IsNullOrWhiteSpace(remote.PrivateKeyPath) then []
                 else [ "-i"; remote.ExpandedKeyPath ]
-            for argument in
+            let sshArgs =
                 [ yield! [ "-T"; "-o"; "BatchMode=yes"; "-o"; "StrictHostKeyChecking=yes"
                            "-o"; "ConnectTimeout=10"; "-o"; "ServerAliveInterval=15"; "-o"; "ServerAliveCountMax=2"
                            "-p"; string remote.Port ]
                   yield! keyArguments
-                  yield! [ "-l"; remote.User; "--"; remote.Host; remoteCommand ] ] do
-                startInfo.ArgumentList.Add(argument)
-        startInfo
+                  yield! [ "-l"; remote.User; "--"; remote.Host; remoteCommand ] ]
+            FlatpakHost.createStartInfo inFlatpak "ssh" None [] sshArgs
+
+    /// <summary>ローカルまたは SSH 経由のコンテナ CLI 実行用 ProcessStartInfo を生成する。</summary>
+    let startInfo runtime (connection: SshConnection option) workingDirectory arguments =
+        startInfoFor (FlatpakHost.isRunningInFlatpak()) runtime connection workingDirectory arguments
+
+    /// <summary>実行環境（Flatpak / 直接）を指定して SSH 疎通確認用の ProcessStartInfo を生成する。</summary>
+    let sshTestStartInfoFor (inFlatpak: bool) runtime remote =
+        let info = startInfoFor inFlatpak runtime (Some remote) None []
+        info.ArgumentList.[info.ArgumentList.Count - 1] <- "echo OK"
+        info
 
     /// <summary>SSH 疎通確認（echo OK）用の ProcessStartInfo を生成する。</summary>
     let sshTestStartInfo runtime remote =
-        let info = startInfo runtime (Some remote) None []
-        info.ArgumentList.[info.ArgumentList.Count - 1] <- "echo OK"
-        info
+        sshTestStartInfoFor (FlatpakHost.isRunningInFlatpak()) runtime remote
 
     /// <summary>コンテナ内で bash が利用可能か調べるコマンド引数を返す。</summary>
     let containerBashCheckArguments containerId = [ "exec"; containerId; "bash"; "-c"; "exit" ]
@@ -380,14 +421,14 @@ module TerminalCommand =
         | Ok _ -> Bash
         | Error _ -> Sh
 
-    /// <summary>ターミナルで実行するコマンド、引数リスト、作業ディレクトリを決定する。</summary>
-    let target runtime (connection: SshConnection option) workingDirectory container =
+    /// <summary>実行環境（Flatpak / 直接）を指定してターミナル実行コマンド、引数リスト、作業ディレクトリを決定する。</summary>
+    let targetFor (inFlatpak: bool) runtime (connection: SshConnection option) workingDirectory container =
         let containerArgs (id, shell) =
             [ "exec"; "-it"; id; (match shell with Bash -> "bash" | Sh -> "sh") ]
         match connection with
         | None ->
             match container with
-            | Some target -> ContainerRuntime.executable runtime, containerArgs target, workingDirectory
+            | Some target -> ContainerRuntime.executableFor inFlatpak runtime, containerArgs target, workingDirectory
             | None -> (if OperatingSystem.IsWindows() then "powershell.exe" else "/bin/sh"), [], workingDirectory
         | Some remote ->
             match remote.Validate() with
@@ -410,6 +451,10 @@ module TerminalCommand =
                   yield! [ "-l"; remote.User; "--"; remote.Host ] ]
             "ssh", (if remoteCommand = "" then arguments else arguments @ [ remoteCommand ]), None
 
+    /// <summary>ターミナルで実行するコマンド、引数リスト、作業ディレクトリを決定する。</summary>
+    let target runtime (connection: SshConnection option) workingDirectory container =
+        targetFor (FlatpakHost.isRunningInFlatpak()) runtime connection workingDirectory container
+
     /// <summary>PATH 上から指定された実行ファイル名を検索する。</summary>
     let private findExecutable name =
         let path = Environment.GetEnvironmentVariable("PATH") |> Option.ofObj |> Option.defaultValue ""
@@ -417,42 +462,76 @@ module TerminalCommand =
         |> Array.map (fun directory -> Path.Combine(directory.Trim('"'), name))
         |> Array.tryFind File.Exists
 
+    /// <summary>Flatpak ホスト側に指定コマンドが存在するかを確認し、存在時はコマンド名をそのまま返す。</summary>
+    let private findHostExecutable (name: string) : string option =
+        try
+            let info = FlatpakHost.createStartInfo true "sh" None [] [ "-c"; "command -v -- \"$1\" >/dev/null 2>&1"; "_"; name ]
+            use proc = new Process(StartInfo = info)
+            if proc.Start() then
+                if proc.WaitForExit(3000) && proc.ExitCode = 0 then Some name
+                else
+                    try if not proc.HasExited then proc.Kill(true) with _ -> ()
+                    None
+            else None
+        with _ -> None
+
+    /// <summary>Linux（直接 / Flatpak ホスト経由）でターミナルを起動するための ProcessStartInfo を生成する。</summary>
+    let linuxStartInfo (inFlatpak: bool) (terminalLookup: string -> string option) (executable: string) (arguments: string list) (directory: string option) : ProcessStartInfo =
+        let terminal, termArgs =
+            match terminalLookup "gnome-terminal", terminalLookup "konsole" with
+            | Some terminal, _ ->
+                let dirArgs =
+                    match directory with
+                    | Some path when not (String.IsNullOrWhiteSpace(path)) -> [ "--working-directory"; path ]
+                    | _ -> []
+                terminal, dirArgs @ [ "--" ]
+            | None, Some terminal ->
+                let dirArgs =
+                    match directory with
+                    | Some path when not (String.IsNullOrWhiteSpace(path)) -> [ "--workdir"; path ]
+                    | _ -> []
+                terminal, dirArgs @ [ "-e" ]
+            | None, None -> failwith "gnome-terminal or konsole was not found."
+        let fullArgs = termArgs @ (executable :: arguments)
+        let startInfo = ProcessStartInfo(if inFlatpak then "flatpak-spawn" else terminal)
+        startInfo.UseShellExecute <- false
+        if inFlatpak then
+            startInfo.WorkingDirectory <- "/"
+            startInfo.ArgumentList.Add("--host")
+            startInfo.ArgumentList.Add(terminal)
+        for argument in fullArgs do
+            startInfo.ArgumentList.Add(argument)
+        startInfo
+
     /// <summary>OS に応じたターミナルアプリを起動してローカルまたは SSH セッションを開く。</summary>
     let start runtime connection workingDirectory container =
         try
-            let executable, arguments, directory = target runtime connection workingDirectory container
-            let startInfo = ProcessStartInfo()
-            startInfo.UseShellExecute <- false
-            if OperatingSystem.IsWindows() then
-                match findExecutable "wt.exe" with
-                | Some terminal ->
-                    startInfo.FileName <- terminal
-                    directory |> Option.iter (fun path -> startInfo.ArgumentList.Add("-d"); startInfo.ArgumentList.Add(path))
-                    startInfo.ArgumentList.Add(executable)
-                    for argument in arguments do startInfo.ArgumentList.Add(argument)
-                | None ->
-                    startInfo.FileName <- "powershell.exe"
-                    directory |> Option.iter (fun path -> startInfo.WorkingDirectory <- path)
-                    if executable <> "powershell.exe" || not arguments.IsEmpty then
-                        let quotePowerShell (value: string) = "'" + value.Replace("'", "''") + "'"
-                        startInfo.ArgumentList.Add("-NoExit")
-                        startInfo.ArgumentList.Add("-Command")
-                        startInfo.ArgumentList.Add("& " + (executable :: arguments |> List.map quotePowerShell |> String.concat " "))
-            elif OperatingSystem.IsLinux() then
-                match findExecutable "gnome-terminal", findExecutable "konsole" with
-                | Some terminal, _ ->
-                    startInfo.FileName <- terminal
-                    directory |> Option.iter (fun path -> startInfo.ArgumentList.Add("--working-directory"); startInfo.ArgumentList.Add(path))
-                    startInfo.ArgumentList.Add("--")
-                | None, Some terminal ->
-                    startInfo.FileName <- terminal
-                    directory |> Option.iter (fun path -> startInfo.ArgumentList.Add("--workdir"); startInfo.ArgumentList.Add(path))
-                    startInfo.ArgumentList.Add("-e")
-                | None, None -> failwith "gnome-terminal or konsole was not found."
-                startInfo.ArgumentList.Add(executable)
-                for argument in arguments do startInfo.ArgumentList.Add(argument)
-            else
-                failwith "Opening a terminal is supported on Windows and Linux."
+            let inFlatpak = FlatpakHost.isRunningInFlatpak()
+            let executable, arguments, directory = targetFor inFlatpak runtime connection workingDirectory container
+            let startInfo =
+                if OperatingSystem.IsWindows() then
+                    let info = ProcessStartInfo()
+                    info.UseShellExecute <- false
+                    match findExecutable "wt.exe" with
+                    | Some terminal ->
+                        info.FileName <- terminal
+                        directory |> Option.iter (fun path -> info.ArgumentList.Add("-d"); info.ArgumentList.Add(path))
+                        info.ArgumentList.Add(executable)
+                        for argument in arguments do info.ArgumentList.Add(argument)
+                    | None ->
+                        info.FileName <- "powershell.exe"
+                        directory |> Option.iter (fun path -> info.WorkingDirectory <- path)
+                        if executable <> "powershell.exe" || not arguments.IsEmpty then
+                            let quotePowerShell (value: string) = "'" + value.Replace("'", "''") + "'"
+                            info.ArgumentList.Add("-NoExit")
+                            info.ArgumentList.Add("-Command")
+                            info.ArgumentList.Add("& " + (executable :: arguments |> List.map quotePowerShell |> String.concat " "))
+                    info
+                elif OperatingSystem.IsLinux() then
+                    let lookup = if inFlatpak then findHostExecutable else findExecutable
+                    linuxStartInfo inFlatpak lookup executable arguments directory
+                else
+                    failwith "Opening a terminal is supported on Windows and Linux."
             use terminal = Process.Start(startInfo)
             if isNull terminal then Error "Could not start the terminal." else Ok ()
         with error -> Error error.Message
@@ -461,12 +540,14 @@ module TerminalCommand =
 type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
     let runtime = defaultArg runtime Docker
     let isRemote = connection.IsSome
+    let inFlatpak = FlatpakHost.isRunningInFlatpak()
+    let skipLocalDirCheck = isRemote || inFlatpak
     let makeStartInfo workingDirectory arguments = ContainerCommand.startInfo runtime connection workingDirectory arguments
     let jsonFormat = if runtime = Podman then "json" else "{{json .}}"
 
     /// <summary>指定ディレクトリと引数で CLI コマンドをキャンセル対応付きで非同期実行し、標準出力を返す。</summary>
     let executeAtWithCancel workingDirectory arguments (cancellationToken: System.Threading.CancellationToken option) = async {
-        match ContainerCommand.validateLocalWorkingDirectory isRemote workingDirectory Directory.Exists with
+        match ContainerCommand.validateLocalWorkingDirectory skipLocalDirCheck workingDirectory Directory.Exists with
         | Error message -> return Error message
         | Ok () ->
             try
@@ -494,7 +575,7 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
                     if dockerProcess.ExitCode = 0 then return Ok output
                     else return Error (if String.IsNullOrWhiteSpace(error) then output.Trim() else error.Trim())
             with ex ->
-                return Error (ContainerCommand.describeStartException runtime isRemote workingDirectory Directory.Exists ex)
+                return Error (ContainerCommand.describeStartException runtime skipLocalDirCheck workingDirectory Directory.Exists ex)
     }
 
     /// <summary>指定ディレクトリと引数で CLI コマンドを非同期実行し、標準出力を返す。</summary>
@@ -504,7 +585,7 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
 
     /// <summary>出力を逐次コールバックへ通知しながら CLI コマンドを非同期実行する。</summary>
     let executeWithProgress workingDirectory arguments onProgress = async {
-        match ContainerCommand.validateLocalWorkingDirectory isRemote workingDirectory Directory.Exists with
+        match ContainerCommand.validateLocalWorkingDirectory skipLocalDirCheck workingDirectory Directory.Exists with
         | Error message -> return Error message
         | Ok () ->
             try
@@ -523,7 +604,7 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
                 if dockerProcess.ExitCode = 0 then return Ok ()
                 else return Error (errors.ToArray() |> String.concat Environment.NewLine)
             with ex ->
-                return Error (ContainerCommand.describeStartException runtime isRemote workingDirectory Directory.Exists ex)
+                return Error (ContainerCommand.describeStartException runtime skipLocalDirCheck workingDirectory Directory.Exists ex)
     }
 
     member _.IsRemote = connection.IsSome
@@ -627,7 +708,7 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
 
     /// <summary>CLI の存在確認（--version）とエンジン接続確認（info）を行い、失敗時は原因区分を返す。</summary>
     member _.CheckConnection() = async {
-        let run arguments = async {
+        let run isVersionProbe arguments = async {
             try
                 use dockerProcess = new Process(StartInfo = makeStartInfo None arguments)
                 dockerProcess.Start() |> ignore
@@ -645,6 +726,8 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
                         let state =
                             if lower.Contains("permission denied") || lower.Contains("access is denied") then "permission"
                             elif connection.IsSome && lower.Contains(ContainerRuntime.command runtime) && (lower.Contains("not found") || lower.Contains("command not found")) then "remoteRuntimeMissing"
+                            elif inFlatpak && isVersionProbe && (lower.Contains("no such file or directory") || lower.Contains("not found")) then
+                                if isRemote then "sshMissing" else "cliMissing"
                             else "unreachable"
                         return Error(state, details.Trim())
                 with :? OperationCanceledException ->
@@ -658,15 +741,15 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
             | :? UnauthorizedAccessException as error -> return Error("permission", error.Message)
             | error -> return Error("unreachable", error.Message)
         }
-        let! version = run [ "--version" ]
+        let! version = run true [ "--version" ]
         match version with
         | Error failure -> return Error failure
-        | Ok () -> return! run [ "info" ]
+        | Ok () -> return! run false [ "info" ]
     }
 
     /// <summary>指定コンテナのログ追尾（logs --follow）プロセスを開始する。</summary>
     member _.StartLogFollow(containerId: string, onLine: string -> unit) =
-        match ContainerCommand.validateLocalWorkingDirectory isRemote None Directory.Exists with
+        match ContainerCommand.validateLocalWorkingDirectory skipLocalDirCheck None Directory.Exists with
         | Error message -> Error message
         | Ok () ->
             try
@@ -681,12 +764,12 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
                 dockerProcess.BeginErrorReadLine()
                 Ok dockerProcess
             with ex ->
-                Error (ContainerCommand.describeStartException runtime isRemote None Directory.Exists ex)
+                Error (ContainerCommand.describeStartException runtime skipLocalDirCheck None Directory.Exists ex)
 
     /// <summary>指定 Compose プロジェクトのログ追尾プロセスを開始する。</summary>
     member _.StartComposeLogFollow(folderPath: string, onLine: string -> unit) =
         let workingDirectory = Some folderPath
-        match ContainerCommand.validateLocalWorkingDirectory isRemote workingDirectory Directory.Exists with
+        match ContainerCommand.validateLocalWorkingDirectory skipLocalDirCheck workingDirectory Directory.Exists with
         | Error message -> Error message
         | Ok () ->
             try
@@ -701,7 +784,7 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
                 dockerProcess.BeginErrorReadLine()
                 Ok dockerProcess
             with ex ->
-                Error (ContainerCommand.describeStartException runtime isRemote workingDirectory Directory.Exists ex)
+                Error (ContainerCommand.describeStartException runtime skipLocalDirCheck workingDirectory Directory.Exists ex)
 
     /// <summary>ローカルまたはリモート上のイメージ一覧を取得する。</summary>
     member _.ListImages() = async {
