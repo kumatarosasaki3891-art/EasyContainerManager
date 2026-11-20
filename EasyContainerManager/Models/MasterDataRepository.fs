@@ -89,7 +89,7 @@ type MasterDataRepository private () =
 
     static let httpClient =
         let client = new HttpClient(Timeout = TimeSpan.FromSeconds(10.0))
-        client.DefaultRequestHeaders.UserAgent.ParseAdd("EasyContainerManager/1.0")
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("EasyContainerManager/1.1")
         client
 
     // 初回起動・オフライン時用バンドルスナップショット（ビルド時デフォルト）
@@ -217,12 +217,12 @@ type MasterDataRepository private () =
 
     static let bundledAppsJson = """{
   "schemaVersion": 1,
-  "updatedAt": "2026-11-19T00:00:00Z",
+  "updatedAt": "2026-11-20T00:00:00Z",
   "apps": [
     {
       "id": "simple-docker-manager",
       "displayName": "簡単コンテナ管理",
-      "latest": "1.0.0",
+      "latest": "1.1.0",
       "storeUrl": "https://sites.google.com/view/kuma-applications/"
     },
     {

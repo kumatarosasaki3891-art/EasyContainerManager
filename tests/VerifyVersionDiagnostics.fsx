@@ -188,8 +188,8 @@ try
     check "rejects schemaVersion 2 apps.json" (not (MasterDataRepository.ImportAppsJson(futureAppsJson, "2027-01-01T00:00:00Z")))
     let afterFutureSnapshot = MasterDataRepository.GetSnapshot()
     let appRecAfterFuture = MasterDataRepository.TryGetApp("simple-docker-manager", afterFutureSnapshot)
-    check "retains cached app latest 1.0.0 after rejected schema" (
-        appRecAfterFuture.IsSome && appRecAfterFuture.Value.Latest = "1.0.0")
+    check "retains cached app latest 1.1.0 after rejected schema" (
+        appRecAfterFuture.IsSome && appRecAfterFuture.Value.Latest = "1.1.0")
 
     let futureRuntimesJson = """{"schemaVersion":99,"updatedAt":"2027-01-01T00:00:00Z","runtimes":[]}"""
     check "rejects schemaVersion 99 runtimes.json" (not (MasterDataRepository.ImportRuntimesJson(futureRuntimesJson, "2027-01-01T00:00:00Z")))
@@ -202,7 +202,7 @@ try
     check "offline fetch returns false without throwing" (not offlineOk)
     check "cache remains intact after offline fetch" (MasterDataRepository.GetSnapshot().Runtimes.Length >= 6)
 
-    let updatedAppsJson = """{"schemaVersion":1,"updatedAt":"2026-11-20T00:00:00Z","apps":[{"id":"simple-docker-manager","displayName":"簡単コンテナ管理","latest":"1.1.0","storeUrl":"https://sites.google.com/view/kuma-applications/"}]}"""
+    let updatedAppsJson = """{"schemaVersion":1,"updatedAt":"2026-11-20T00:00:00Z","apps":[{"id":"simple-docker-manager","displayName":"簡単コンテナ管理","latest":"1.2.0","storeUrl":"https://sites.google.com/view/kuma-applications/"}]}"""
     let successFetcher (url: string) = async {
         if url = MasterDataRepository.AppsUrl then return Ok updatedAppsJson
         elif url = MasterDataRepository.EnginesUrl then
@@ -220,11 +220,11 @@ try
         settingsOverride = AppSettings(),
         startAutomatically = false,
         masterDataFetcher = successFetcher,
-        appVersionOverride = "1.0.0"
+        appVersionOverride = "1.1.0"
     )
-    check "VM reads updated latest 1.1.0 and marks app outdated" (
-        vm.CurrentAppVersionText = "1.0.0"
-        && vm.LatestAppVersionText = "1.1.0"
+    check "VM reads updated latest 1.2.0 and marks app outdated" (
+        vm.CurrentAppVersionText = "1.1.0"
+        && vm.LatestAppVersionText = "1.2.0"
         && vm.IsAppOutdated
         && vm.HasStoreUpdateLink
         && vm.DiagnosticsDefinitionDateText = "定義データ: 2026-11-20時点")
@@ -245,9 +245,9 @@ try
     let vmLatest = new MainViewModel(
         settingsOverride = AppSettings(),
         startAutomatically = false,
-        appVersionOverride = "1.1.0"
+        appVersionOverride = "1.2.0"
     )
-    check "when current version equals latest (1.1.0), IsAppOutdated is false" (not vmLatest.IsAppOutdated)
+    check "when current version equals latest (1.2.0), IsAppOutdated is false" (not vmLatest.IsAppOutdated)
     (vmLatest :> IDisposable).Dispose()
     (vm :> IDisposable).Dispose()
 

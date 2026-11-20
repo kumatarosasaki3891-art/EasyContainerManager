@@ -60,6 +60,12 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.1.0" date="2026-11-20">
+      <description>
+        <p>Added per-container and Compose operation history (SQLite), cleared error status banners upon refresh recovery, and cleaned up service inference entries.</p>
+        <p xml:lang="ja">コンテナ・Compose ごとの操作履歴（SQLite）、更新成功時のエラー表示クリア、サービス推定辞書の整理を追加しました。</p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-11-19">
       <description>
         <p>Initial release with container management, Compose support, SSH remote access, service diagnostics, and version diagnostics.</p>

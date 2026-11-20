@@ -3,7 +3,7 @@ param(
     [string]$Configuration = "Release",
 
     [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')]
-    [string]$Version = "1.0.0.0",
+    [string]$Version = "1.1.0.0",
 
     [ValidateSet("x64", "arm64", "x86")]
     [string[]]$Architectures = @("x64"),
@@ -125,9 +125,6 @@ if (-not [string]::IsNullOrWhiteSpace($PfxPath) -or $SignTestCert) {
             $certPass = "EasyContainerManagerDev!"
         }
         $publisher = ([xml](Get-Content -Path $manifestTemplate -Encoding UTF8)).Package.Identity.Publisher
-        if ([string]::IsNullOrWhiteSpace($publisher)) {
-            $publisher = "CN=XXX"
-        }
         $existing = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Subject -eq $publisher } | Select-Object -First 1
         if (-not $existing) {
             Write-Host "Creating self-signed test certificate for $publisher..."

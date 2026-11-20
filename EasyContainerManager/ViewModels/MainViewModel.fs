@@ -153,9 +153,9 @@ type MainViewModel(
             let asm = typeof<MainViewModel>.Assembly
             if asm.GetName().Name = "EasyContainerManager" then
                 let v = asm.GetName().Version
-                if isNull v then "1.0.0" else sprintf "%d.%d.%d" v.Major v.Minor (max 0 v.Build)
+                if isNull v then "1.1.0" else sprintf "%d.%d.%d" v.Major v.Minor (max 0 v.Build)
             else
-                "1.0.0"
+                "1.1.0"
     let postOnUI action =
         if isNull Dispatcher.UIThread then action()
         else
