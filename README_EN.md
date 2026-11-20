@@ -1,7 +1,7 @@
 # EasyContainerManager
 
 [![Releases](https://img.shields.io/github/v/release/kumatarosasaki3891-art/EasyContainerManager?label=Linux%20Release&color=0284c7)](https://github.com/kumatarosasaki3891-art/EasyContainerManager/releases)
-[![Windows 10/11](https://img.shields.io/badge/Microsoft%20Store-Windows%2010%2F11-f97316)](#-download)
+[![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Windows%2010%2F11-f97316)](https://apps.microsoft.com/detail/9NXWKWNKL8MT?hl=en-us&gl=US&ocid=pdpshare)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 English | [日本語](README.md)
@@ -16,7 +16,7 @@ It also provides real-time resource monitoring, port exposure highlighting, and 
 ## 📥 Download
 
 - **🐧 Linux (Flatpak bundle)**: [GitHub Releases](https://github.com/kumatarosasaki3891-art/EasyContainerManager/releases) (or build locally using the Flatpak instructions below and [FLATHUB_GUIDE.md](FLATHUB_GUIDE.md))
-- **🪟 Windows 10 / 11**: [Project Website](https://sites.google.com/view/kuma-applications/) / Microsoft Store (coming soon; you can also build from source and package as MSIX using the instructions below)
+- **🪟 Windows 10 / 11**: [Get it free from the Microsoft Store](https://apps.microsoft.com/detail/9NXWKWNKL8MT?hl=en-us&gl=US&ocid=pdpshare) / [Project Website](https://sites.google.com/view/kuma-applications/) (you can also build from source and package as MSIX using the instructions below)
 
 ---
 
