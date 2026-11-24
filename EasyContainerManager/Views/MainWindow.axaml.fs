@@ -26,6 +26,16 @@ type MainWindow () as this =
 
         // トップバー操作
         onClick "RefreshButton" (fun viewModel -> viewModel.RefreshAsync() |> Async.StartImmediate)
+        onClick "DismissAlertBannerButton" (fun viewModel -> viewModel.DismissAlertBanner())
+        onClick "OpenMobileSessionDialogButton" (fun viewModel -> viewModel.OpenMobileSessionDialog())
+        onClick "CloseMobileSessionDialogButton" (fun viewModel -> viewModel.CloseMobileSessionDialog())
+        onClick "CloseMobileSessionDialogXButton" (fun viewModel -> viewModel.CloseMobileSessionDialog())
+        onClick "StartMobileSessionButton" (fun viewModel -> viewModel.StartMobileSession())
+        onClick "StopMobileSessionButton" (fun viewModel -> viewModel.StopMobileSession())
+        onClick "ReissueMobileSessionButton" (fun viewModel -> viewModel.ReissueMobileSession())
+        onClick "OpenFaqDialogButton" (fun viewModel -> viewModel.OpenFaqDialog())
+        onClick "CloseFaqDialogButton" (fun viewModel -> viewModel.CloseFaqDialog())
+        onClick "CloseFaqDialogXButton" (fun viewModel -> viewModel.CloseFaqDialog())
         onClick "OpenInfoDialogButton" (fun viewModel -> viewModel.OpenInfoDialog())
         onClick "CloseInfoDialogButton" (fun viewModel -> viewModel.CloseInfoDialog())
         onClick "CloseInfoDialogXButton" (fun viewModel -> viewModel.CloseInfoDialog())
@@ -34,6 +44,9 @@ type MainWindow () as this =
         onClick "OpenInstagramButton" (fun viewModel -> viewModel.OpenInstagram())
         onClick "OpenLatestVersionButton" (fun viewModel -> viewModel.OpenLatestVersionPage())
         onClick "StartContainerEngineButton" (fun viewModel -> viewModel.StartContainerEngineAsync() |> Async.StartImmediate)
+
+        // ボリューム操作（読み取り専用）
+        onClick "RefreshVolumesButton" (fun viewModel -> viewModel.RefreshVolumesAsync() |> Async.StartImmediate)
 
         // コンテナ操作
         onClick "StartButton" (fun viewModel -> viewModel.StartSelectedAsync() |> Async.StartImmediate)

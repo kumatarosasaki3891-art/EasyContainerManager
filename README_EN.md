@@ -60,8 +60,15 @@ It also provides real-time resource monitoring, port exposure highlighting, and 
 - **Version Diagnostics & Local SQLite Cache (`VersionDiagnostics.fs` / `MasterDataRepository.fs`)**
   - Uses public definition data ([`kuma-master-data`](https://github.com/kumatarosasaki3891-art/kuma-master-data)) cached in a local SQLite database to check container engines (`docker`, `podman`, `nerdctl`) and container runtimes (`nginx`, `php`, `mysql`, `mariadb`, `postgres`, `redis`, `httpd`, `node`, `python`) for End-of-Life (EOL) branches, version lag, and curated critical advisories.
   - All diagnostics execute locally on your device; no user data or diagnostic results are ever sent externally.
-- **Per-Target Operation History (`OperationLog.fs`)**
+- **Read-Only Volume Overview & Container Linkage (`VolumeInfo.fs`)**
+  - Collects volume metadata and disk usage from `volume ls`, `volume inspect`, and `system df -v` (with best-effort local `du -sb` fallback on Linux; strictly `system df -v` on Windows Docker Desktop), distinguishing named vs. anonymous and unused vs. in-use volumes, and linking mounts between Containers and Volumes without any delete/prune actions.
+- **Per-Target Operation History & Anomaly Alert History (`OperationLog.fs` / `AlertMonitor.fs`)**
   - Records user-initiated container actions (start, stop, restart, remove, exec) and Compose actions (up, down, restart) with timestamp, status (`✓`/`✗`), and brief error details in local SQLite (`operation_log`, up to 20 newest entries per container or Compose project), displayed alongside logs and in the diagnostics dialog (background auto-refresh polling is excluded).
+  - Piggybacks on existing refresh polling to detect abnormal exits, `OOMKilled`, restart surges, volume threshold breaches (5 GiB Warning / 20 GiB Danger), and critical diagnostics findings—storing them in SQLite (`alert_history`) and alerting via the in-app banner, OS desktop notifications, and the connected smartphone viewer.
+- **1-on-1 QR Smartphone Status Viewer (`MobileSessionServer.fs` / `QrCodeGenerator.fs`)**
+  - Starts a read-only local Wi-Fi HTTP/SSE server (default port `54830`, 15-minute idle timeout) only when triggered by the user, locking 1-on-1 to the first phone that scans the QR code. Displays containers, volumes, diagnostics summaries, live SSE/polled alert banners, and FAQ with browser Web Speech API read-aloud—with zero mutation controls or external exposure.
+- **Beginner FAQ Dialog (`FaqData.fs`)**
+  - Built-in Q&A covering container, Compose, volume, diagnostics, QR session, and SSH basics (Japanese & English, with English fallback for other UI languages).
 - **Resource Monitoring & In-App Alerts**
   - Tracks per-container CPU, memory, and network I/O along with Compose stack health, showing in-app notifications when thresholds or failures occur.
 - **Secure SSH Remote Management (`StrictHostKeyChecking=yes`)**
@@ -87,7 +94,7 @@ It also provides real-time resource monitoring, port exposure highlighting, and 
 - **Memory**: Below 70% is Normal, 70% or higher is Caution, 90% or higher is High. Displays usage, limit, and percentage.
 - **Compose**: Uses `docker compose`, `podman compose`, or `nerdctl compose` to show running/total existing containers and lists stopped or `unhealthy` service names in the warning bar (uncreated services are excluded from total counts; note that `nerdctl` compose output does not expose health status).
 - **Path Tooltip**: Hovering over a Compose project's folder path shows the full path in a tooltip.
-- **Alert Notifications**: When "Alert notifications" is enabled, high CPU, high memory, and Compose warnings trigger in-app notifications. Ongoing issues do not repeatedly alert until they recover and recur. No OS notification center alerts or background monitoring after closing the app are performed.
+- **Alert Notifications & History**: When "Alert notifications" is enabled, high CPU, high memory, Compose warnings, container abnormal exits, `OOMKilled`, restart surges, volume size thresholds (5 GiB Warning / 20 GiB Danger), and critical diagnostics trigger in-app banners/toasts and desktop OS notifications. All anomaly events are saved in SQLite (`alert_history`) and listed under "Alert history" on the Monitor tab (no background monitoring runs after closing the app).
 
 ### Version Diagnostics & Master Data
 
@@ -132,6 +139,8 @@ dotnet fsi tests/VerifyServiceInference.fsx
 dotnet fsi tests/VerifyServiceDiagnostics.fsx
 dotnet fsi tests/VerifyVersionDiagnostics.fsx
 dotnet fsi tests/VerifyOperationLog.fsx
+dotnet fsi tests/VerifyV12Volumes.fsx
+dotnet fsi tests/VerifyV12AlertsAndMobile.fsx
 ```
 
 ### 2. Build MSIX Package (Windows / Microsoft Store)

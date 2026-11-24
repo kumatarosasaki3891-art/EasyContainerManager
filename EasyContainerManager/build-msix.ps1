@@ -3,7 +3,7 @@ param(
     [string]$Configuration = "Release",
 
     [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')]
-    [string]$Version = "1.1.0.0",
+    [string]$Version = "1.2.0.0",
 
     [ValidateSet("x64", "arm64", "x86")]
     [string[]]$Architectures = @("x64"),

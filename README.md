@@ -57,8 +57,15 @@
 - **バージョン診断とローカル SQLite キャッシュ (`VersionDiagnostics.fs` / `MasterDataRepository.fs`)**
   - 公開マスターデータ（[`kuma-master-data`](https://github.com/kumatarosasaki3891-art/kuma-master-data)）と内蔵 SQLite キャッシュを用いて、エンジンやコンテナ内ランタイム（nginx / PHP / MySQL / MariaDB / PostgreSQL / Redis / httpd / Node.js / Python）のサポート終了（EOL）、パッチ遅れ、精選された緊急アドバイザリを照合します。
   - 診断処理は端末内で完結し、ユーザーデータや診断結果を外部へ送信しません。
-- **操作履歴のローカル記録 (`OperationLog.fs`)**
+- **ボリューム一覧とコンテナ紐付け (`VolumeInfo.fs`)**
+  - `volume ls` / `volume inspect` / `system df -v`（Linux ローカル環境では補助的に実測 `du -sb` も併用）からボリュームの一覧・ドライバ・マウント先・使用容量・名前付き／匿名の区別・未使用状態を一覧表示し、コンテナとのマウント紐付けも確認できます（読み取り専用で、削除・prune は実行しません）。
+- **操作履歴・アラート履歴のローカル記録 (`OperationLog.fs` / `AlertMonitor.fs`)**
   - コンテナの起動・停止・再起動・削除・シェル接続や Compose の起動・停止・再起動など、ユーザーが行った操作結果（成否・時刻・失敗理由）をアプリ内の SQLite（`operation_log`）にコンテナ／プロジェクト単位で直近 20 件まで記録し、詳細欄や診断ダイアログから確認できます（10 秒ごとの自動更新は記録しません）。
+  - 定期更新に相乗りした異常検知（異常終了・`OOMKilled`・再起動回数の急増・ボリューム容量しきい値超過・診断の危険判定・高リソース・Compose 異常）も SQLite（`alert_history`）へ保存し、アプリ内バナー・OS デスクトップ通知・スマホページで通知します。
+- **スマホ連携 QR セッション (`MobileSessionServer.fs` / `QrCodeGenerator.fs`)**
+  - ユーザーのボタン操作時のみ同一 Wi-Fi 内で起動する 1 対 1 排他ロックのローカル HTTP / SSE サーバー（既定ポート `54830`、無通信 15 分で自動切断）。スマホからコンテナ・ボリューム・診断要約・最新アラートバナーを閲覧専用で確認でき、ブラウザ音声読み上げ（Web Speech API）にも対応します。
+- **初心者向け FAQ ダイアログ (`FaqData.fs`)**
+  - 「コンテナってなに？」「Compose ってなに？」「ボリュームってなに？」などの基本 Q&A をアプリ内に収録（日本語・英語、他言語は英語表示）。スマホ連携ページの FAQ タブでは音声読み上げにも対応します。
 - **リソース監視＆アプリ内警告通知**
   - コンテナ別の CPU・メモリ・通信量（Net I/O）および Compose プロジェクトの稼働数を監視し、閾値超過や異常時にアプリ内通知を行います。
 - **セキュアな SSH リモート管理 (`StrictHostKeyChecking=yes`)**
@@ -84,7 +91,7 @@
 - **メモリ**: 70% 未満は正常、70% 以上は注意、90% 以上は警告。使用量・制限値・使用率を表示します。
 - **Compose**: Docker モードでは `docker compose`、Podman モードでは `podman compose`、nerdctl モードでは `nerdctl compose` を使い、既存コンテナの稼働数／総数を表示します。停止・`unhealthy` のサービス名を警告欄に表示します（未作成サービスは総数に含みません。なお、`nerdctl` の Compose 出力には Health 情報がないため `unhealthy` の判定はできません）。
 - **パス表示**: Compose 一覧のフォルダパスにマウスを重ねると、ツールチップでパス全体を表示します。
-- **警告通知**: 「警告通知」を ON にすると、高 CPU・高メモリ・Compose 異常をアプリ内通知で表示します。同じ異常が継続するだけでは再通知せず、復旧後の再発で通知します。OS の通知センターへの通知・アプリ終了後の監視は行いません。
+- **警告通知とアラート履歴**: 「警告通知」を ON にすると、高 CPU・高メモリ・Compose 異常に加えて、コンテナ異常終了・`OOMKilled`・再起動急増・ボリューム容量超過（5 GB 警告／20 GB 危険）・診断の危険判定をアプリ内バナー／通知および OS 通知で表示します。発生履歴は SQLite（`alert_history`）に記録され、「監視」タブ下部の「アラート履歴」で確認できます（アプリ終了後の監視は行いません）。
 
 ### バージョン診断とマスターデータ連携
 
@@ -129,6 +136,8 @@ dotnet fsi tests/VerifyServiceInference.fsx
 dotnet fsi tests/VerifyServiceDiagnostics.fsx
 dotnet fsi tests/VerifyVersionDiagnostics.fsx
 dotnet fsi tests/VerifyOperationLog.fsx
+dotnet fsi tests/VerifyV12Volumes.fsx
+dotnet fsi tests/VerifyV12AlertsAndMobile.fsx
 ```
 
 ### 2. MSIX パッケージのビルド（Windows / Microsoft Store 配信用）

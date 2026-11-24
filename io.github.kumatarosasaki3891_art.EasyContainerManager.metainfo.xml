@@ -60,6 +60,12 @@
   <content_rating type="oars-1.1" />
 
   <releases>
+    <release version="1.2.0" date="2026-11-24">
+      <description>
+        <p>Added read-only Volumes tab with size and container mount linkage, anomaly alert history (SQLite) with OS/in-app notifications, 1-on-1 QR Wi-Fi smartphone status viewer with SSE/TTS, and Beginner FAQ dialog.</p>
+        <p xml:lang="ja">読み取り専用のボリューム一覧・使用容量・コンテナ紐付け、異常検知アラート履歴（SQLite）とアプリ内／OS 通知、1対1 QR スマホ連携ページ（SSE・ブラウザ音声読み上げ対応）、初心者向け FAQ ダイアログを追加しました。</p>
+      </description>
+    </release>
     <release version="1.1.0" date="2026-11-20">
       <description>
         <p>Added per-container and Compose operation history (SQLite), cleared error status banners upon refresh recovery, and cleaned up service inference entries.</p>

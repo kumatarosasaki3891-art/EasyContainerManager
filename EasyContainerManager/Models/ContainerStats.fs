@@ -148,8 +148,13 @@ type AlertTracker() =
     /// <summary>通知済みのアクティブ警告状態をすべてリセットする。</summary>
     member _.Reset() = active <- Set.empty
 
-    /// <summary>最新の警告一覧を反映し、新規発生した通知のみを返す。</summary>
-    member _.Update(enabled: bool, alerts: (string * string * string) list) =
+    /// <summary>最新の警告一覧を反映し、新規発生した警告（キー・タイトル・メッセージ）を返す。</summary>
+    member _.UpdateDetailed(enabled: bool, alerts: (string * string * string) list) =
         let fresh = if enabled then alerts |> List.filter (fun (key, _, _) -> not (active.Contains(key))) else []
         active <- if enabled then alerts |> List.map (fun (key, _, _) -> key) |> Set.ofList else Set.empty
-        fresh |> List.map (fun (_, title, message) -> title, message)
+        fresh
+
+    /// <summary>最新の警告一覧を反映し、新規発生した通知のみを返す。</summary>
+    member this.Update(enabled: bool, alerts: (string * string * string) list) =
+        this.UpdateDetailed(enabled, alerts)
+        |> List.map (fun (_, title, message) -> title, message)

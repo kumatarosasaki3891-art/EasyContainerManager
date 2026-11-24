@@ -4,9 +4,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
-    <Version>1.1.0</Version>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
+    <Version>1.2.0</Version>
+    <AssemblyVersion>1.2.0.0</AssemblyVersion>
+    <FileVersion>1.2.0.0</FileVersion>
     <Product>簡単コンテナ管理</Product>
     <Company>XXX</Company>
   </PropertyGroup>
@@ -23,16 +23,21 @@
     <Compile Include="Models\ContainerInfo.fs" />
     <Compile Include="Models\ServiceInference.fs" />
     <Compile Include="Models\ServiceDiagnostics.fs" />
+    <Compile Include="Models\VolumeInfo.fs" />
+    <Compile Include="Models\FaqData.fs" />
     <Compile Include="Models\ImageInfo.fs" />
     <Compile Include="Models\ChoiceOption.fs" />
     <Compile Include="Models\SshConnection.fs" />
     <Compile Include="Models\ComposeProject.fs" />
     <Compile Include="Models\ComposeRepository.fs" />
     <Compile Include="Models\OperationLog.fs" />
+    <Compile Include="Models\AlertMonitor.fs" />
     <Compile Include="Models\MasterDataRepository.fs" />
     <Compile Include="Models\VersionDiagnostics.fs" />
     <Compile Include="AppSettings.fs" />
     <Compile Include="ContainerCli.fs" />
+    <Compile Include="Services\QrCodeGenerator.fs" />
+    <Compile Include="Services\MobileSessionServer.fs" />
     <Compile Include="ViewModels\MainViewModel.fs" />
     <Compile Include="Views\RuntimeSelectionWindow.axaml.fs" />
     <Compile Include="Views\MainWindow.axaml.fs" />
@@ -56,7 +61,7 @@
 
   <Target Name="BuildMsix">
     <PropertyGroup>
-      <MsixVersion Condition="'$(MsixVersion)' == ''">1.1.0.0</MsixVersion>
+      <MsixVersion Condition="'$(MsixVersion)' == ''">1.2.0.0</MsixVersion>
       <MsixArchitectures Condition="'$(MsixArchitectures)' == ''">x64</MsixArchitectures>
     </PropertyGroup>
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build-msix.ps1&quot; -Configuration $(Configuration) -Version $(MsixVersion) -Architectures $(MsixArchitectures)" />

@@ -6,15 +6,20 @@
 #load "../EasyContainerManager/Models/ContainerInfo.fs"
 #load "../EasyContainerManager/Models/ServiceInference.fs"
 #load "../EasyContainerManager/Models/ServiceDiagnostics.fs"
+#load "../EasyContainerManager/Models/VolumeInfo.fs"
+#load "../EasyContainerManager/Models/FaqData.fs"
 #load "../EasyContainerManager/Models/ImageInfo.fs"
 #load "../EasyContainerManager/Models/SshConnection.fs"
 #load "../EasyContainerManager/Models/ComposeProject.fs"
 #load "../EasyContainerManager/Models/ComposeRepository.fs"
 #load "../EasyContainerManager/Models/OperationLog.fs"
+#load "../EasyContainerManager/Models/AlertMonitor.fs"
 #load "../EasyContainerManager/Models/MasterDataRepository.fs"
 #load "../EasyContainerManager/Models/VersionDiagnostics.fs"
 #load "../EasyContainerManager/AppSettings.fs"
 #load "../EasyContainerManager/ContainerCli.fs"
+#load "../EasyContainerManager/Services/QrCodeGenerator.fs"
+#load "../EasyContainerManager/Services/MobileSessionServer.fs"
 #load "../EasyContainerManager/Models/ChoiceOption.fs"
 #load "../EasyContainerManager/ViewModels/ViewModelBase.fs"
 #load "../EasyContainerManager/ViewModels/MainViewModel.fs"
@@ -188,8 +193,8 @@ try
     check "rejects schemaVersion 2 apps.json" (not (MasterDataRepository.ImportAppsJson(futureAppsJson, "2027-01-01T00:00:00Z")))
     let afterFutureSnapshot = MasterDataRepository.GetSnapshot()
     let appRecAfterFuture = MasterDataRepository.TryGetApp("simple-docker-manager", afterFutureSnapshot)
-    check "retains cached app latest 1.1.0 after rejected schema" (
-        appRecAfterFuture.IsSome && appRecAfterFuture.Value.Latest = "1.1.0")
+    check "retains cached app latest 1.2.0 after rejected schema" (
+        appRecAfterFuture.IsSome && appRecAfterFuture.Value.Latest = "1.2.0")
 
     let futureRuntimesJson = """{"schemaVersion":99,"updatedAt":"2027-01-01T00:00:00Z","runtimes":[]}"""
     check "rejects schemaVersion 99 runtimes.json" (not (MasterDataRepository.ImportRuntimesJson(futureRuntimesJson, "2027-01-01T00:00:00Z")))
@@ -202,13 +207,13 @@ try
     check "offline fetch returns false without throwing" (not offlineOk)
     check "cache remains intact after offline fetch" (MasterDataRepository.GetSnapshot().Runtimes.Length >= 6)
 
-    let updatedAppsJson = """{"schemaVersion":1,"updatedAt":"2026-11-20T00:00:00Z","apps":[{"id":"simple-docker-manager","displayName":"簡単コンテナ管理","latest":"1.2.0","storeUrl":"https://sites.google.com/view/kuma-applications/"}]}"""
+    let updatedAppsJson = """{"schemaVersion":1,"updatedAt":"2026-11-24T00:00:00Z","apps":[{"id":"simple-docker-manager","displayName":"簡単コンテナ管理","latest":"1.3.0","storeUrl":"https://sites.google.com/view/kuma-applications/"}]}"""
     let successFetcher (url: string) = async {
         if url = MasterDataRepository.AppsUrl then return Ok updatedAppsJson
         elif url = MasterDataRepository.EnginesUrl then
-            return Ok """{"schemaVersion":1,"updatedAt":"2026-11-20T00:00:00Z","engines":[{"id":"docker","displayName":"Docker Engine","latest":"28.5.1","releases":["28.5.1"]}]}"""
+            return Ok """{"schemaVersion":1,"updatedAt":"2026-11-24T00:00:00Z","engines":[{"id":"docker","displayName":"Docker Engine","latest":"28.5.1","releases":["28.5.1"]}]}"""
         else
-            return Ok """{"schemaVersion":1,"updatedAt":"2026-11-20T00:00:00Z","runtimes":[{"id":"nginx","displayName":"nginx","branches":[{"branch":"1.31","latest":"1.31.9","eol":null,"support":true}]}]}"""
+            return Ok """{"schemaVersion":1,"updatedAt":"2026-11-24T00:00:00Z","runtimes":[{"id":"nginx","displayName":"nginx","branches":[{"branch":"1.31","latest":"1.31.9","eol":null,"support":true}]}]}"""
     }
     let onlineOk = MasterDataRepository.FetchAndImportAsync(customFetcher = successFetcher, nowUtc = t0) |> Async.RunSynchronously
     check "online fetch succeeds and updates cache" onlineOk
@@ -220,14 +225,14 @@ try
         settingsOverride = AppSettings(),
         startAutomatically = false,
         masterDataFetcher = successFetcher,
-        appVersionOverride = "1.1.0"
+        appVersionOverride = "1.2.0"
     )
-    check "VM reads updated latest 1.2.0 and marks app outdated" (
-        vm.CurrentAppVersionText = "1.1.0"
-        && vm.LatestAppVersionText = "1.2.0"
+    check "VM reads updated latest 1.3.0 and marks app outdated" (
+        vm.CurrentAppVersionText = "1.2.0"
+        && vm.LatestAppVersionText = "1.3.0"
         && vm.IsAppOutdated
         && vm.HasStoreUpdateLink
-        && vm.DiagnosticsDefinitionDateText = "定義データ: 2026-11-20時点")
+        && vm.DiagnosticsDefinitionDateText = "定義データ: 2026-11-24時点")
 
     vm.OpenInfoDialog()
     check "OpenInfoDialog opens dialog" vm.IsInfoDialogOpen
@@ -239,15 +244,15 @@ try
     check "switching to English localizes Info and Definition texts" (
         vm.InfoDialogTitle = "About"
         && vm.AppUpdateAvailableText = "A new version is available"
-        && vm.DiagnosticsDefinitionDateText = "Definitions: as of 2026-11-20"
+        && vm.DiagnosticsDefinitionDateText = "Definitions: as of 2026-11-24"
         && vm.UpdateMasterDataButtonLabel = "Update definitions")
 
     let vmLatest = new MainViewModel(
         settingsOverride = AppSettings(),
         startAutomatically = false,
-        appVersionOverride = "1.2.0"
+        appVersionOverride = "1.3.0"
     )
-    check "when current version equals latest (1.2.0), IsAppOutdated is false" (not vmLatest.IsAppOutdated)
+    check "when current version equals latest (1.3.0), IsAppOutdated is false" (not vmLatest.IsAppOutdated)
     (vmLatest :> IDisposable).Dispose()
     (vm :> IDisposable).Dispose()
 

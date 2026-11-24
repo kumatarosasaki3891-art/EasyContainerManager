@@ -5,12 +5,14 @@ open System.Collections.ObjectModel
 open System.Diagnostics
 open System.IO
 open Avalonia
+open Avalonia.Media
 open Avalonia.Styling
 open Avalonia.Threading
 open EasyContainerManager
 open EasyContainerManager.Models
+open EasyContainerManager.Services
 
-/// <summary>メイン画面のコンテナ・イメージ・Compose・監視・SSH接続・設定を統括する ViewModel。</summary>
+/// <summary>メイン画面のコンテナ・イメージ・ボリューム・Compose・監視・SSH接続・設定を統括する ViewModel。</summary>
 type MainViewModel(
     ?settingsOverride: AppSettings,
     ?startAutomatically: bool,
@@ -24,7 +26,9 @@ type MainViewModel(
     ?imageListFetcher: (unit -> Async<Result<ImageInfo list, string>>),
     ?composeStatusFetcher: (string -> Async<Result<ComposeSnapshot, string>>),
     ?statsFetcher: (unit -> Async<Result<ContainerStats list, string>>),
-    ?connectionChecker: (unit -> Async<Result<unit, string * string>>)
+    ?connectionChecker: (unit -> Async<Result<unit, string * string>>),
+    ?volumeListFetcher: (unit -> Async<Result<VolumeSnapshot list, string>>),
+    ?osNotifier: (string -> string -> unit)
 ) as this =
     inherit ViewModelBase()
 
@@ -38,6 +42,7 @@ type MainViewModel(
         ComposeRepository.Initialize()
         MasterDataRepository.Initialize()
         OperationLogRepository.Initialize()
+        AlertHistoryRepository.Initialize()
         if settings.ComposeProjects.Count > 0 then
             ComposeRepository.MigrateFrom(settings.ComposeProjects)
         let dbProjects = ComposeRepository.GetAll()
@@ -70,6 +75,8 @@ type MainViewModel(
         localize "コンテナ操作に失敗しました。詳細を確認してください。" "Container operation failed. See details."
     let containers = ObservableCollection<ContainerInfo>()
     let images = ObservableCollection<ImageInfo>()
+    let volumes = ObservableCollection<VolumeInfo>()
+    let filteredVolumes = ObservableCollection<VolumeInfo>()
     let stats = ObservableCollection<ContainerStats>()
     let composeProjects =
         ObservableCollection<ComposeProject>(
@@ -94,11 +101,42 @@ type MainViewModel(
     let mutable notificationsEnabled = settings.NotificationsEnabled
     let resourceAlerts = AlertTracker()
     let composeAlerts = AlertTracker()
+    let resourceHistoryTracker = AlertTracker()
+    let composeHistoryTracker = AlertTracker()
     let alertRaised = Event<string * string>()
     let timer = DispatcherTimer(Interval = TimeSpan.FromSeconds(float settings.RefreshIntervalSec))
     let mutable selectedContainer: ContainerInfo = null
     let mutable selectedImage: ImageInfo = null
+    let mutable selectedVolume: VolumeInfo = null
     let mutable selectedComposeProject: ComposeProject = null
+    let mutable showUnusedVolumesOnly = false
+    let mutable volumeSearchText = ""
+    let mutable updatingVolumeList = false
+    let mutable volumeRefreshTickCount = 0
+    let mutable containerMonitorBaselineDone = false
+    let mutable previousContainerSnapshots = Map.empty<string, ContainerMonitorSnapshot>
+    let mutable previousVolumeAlertLevels = Map.empty<string, int>
+    let mutable alertHistoryEntries : AlertEventEntry list = []
+    let mutable activeAlertBanner : AlertEventEntry option = None
+    let mutable latestDiagnosticsSummaries = Map.empty<string, int * int * string list>
+    let mutable isFaqDialogOpen = false
+    let mutable selectedFaqLangKey = FaqData.resolveFaqLanguage settings.Language
+    let mutable selectedFaqCategoryKey = "all"
+    let mutable faqSearchText = ""
+    let faqLanguageOptions =
+        [| ChoiceOption("ja-JP", "日本語")
+           ChoiceOption("en-US", "English") |]
+    let mutable faqCategoryOptions : ChoiceOption array = [||]
+    let mobileServer = new MobileSessionServer()
+    let lanIpCandidates = ObservableCollection<ChoiceOption>()
+    let mutable selectedLanIp: ChoiceOption = null
+    let mutable isMobileSessionDialogOpen = false
+    let mutable mobileQrBitmap: IImage = null
+    let mutable isMobileServerRunning = false
+    let mutable mobileSessionUrl = ""
+    let mutable mobileSessionStatusText = ""
+    let mutable mobileLockedClientText = ""
+    let mutable mobileSessionError = ""
     let mutable logText = localize "ログを表示するコンテナを選択してください。" "Select a container to view its logs."
     let mutable composeLogText = localize "Composeプロジェクトを選択してください。" "Select a Compose project."
     let mutable statusMessage = localize "コンテナを読み込み中..." "Loading containers..."
@@ -153,9 +191,9 @@ type MainViewModel(
             let asm = typeof<MainViewModel>.Assembly
             if asm.GetName().Name = "EasyContainerManager" then
                 let v = asm.GetName().Version
-                if isNull v then "1.1.0" else sprintf "%d.%d.%d" v.Major v.Minor (max 0 v.Build)
+                if isNull v then "1.2.0" else sprintf "%d.%d.%d" v.Major v.Minor (max 0 v.Build)
             else
-                "1.1.0"
+                "1.2.0"
     let postOnUI action =
         if isNull Dispatcher.UIThread then action()
         else
@@ -244,6 +282,8 @@ type MainViewModel(
                     this.NotifyProperty(nameof this.InferredServicesText)
                     this.NotifyProperty(nameof this.HasInferredServices)
                     this.NotifyProperty(nameof this.HasSelectedContainer)
+                    this.NotifyProperty(nameof this.HasSelectedContainerMounts)
+                    this.NotifyProperty(nameof this.SelectedContainerMountsText)
                     this.NotifyProperty(nameof this.HasImageCandidate)
                     this.NotifyProperty(nameof this.ImageCandidateText)
                     this.NotifyProperty(nameof this.HasPortCandidates)
@@ -254,6 +294,21 @@ type MainViewModel(
                 this.SelectedContainer <- null
                 this.ShowLogs(localize "選択中のコンテナは一覧から削除されました。" "The selected container is no longer available.")
             | None -> ()
+
+            // 既存の定期更新に相乗りしてコンテナ状態差分を異常アラート化（初回はベースライン記録のみ）
+            let snapshots = containers |> Seq.map AlertMonitor.snapshotFromContainer |> Seq.toList
+            let anomalyAlerts =
+                AlertMonitor.detectContainerAnomalies
+                    (not containerMonitorBaselineDone)
+                    previousContainerSnapshots
+                    snapshots
+                    DateTimeOffset.UtcNow
+            containerMonitorBaselineDone <- true
+            previousContainerSnapshots <- snapshots |> List.map (fun s -> s.Id, s) |> Map.ofList
+            for anomaly in anomalyAlerts do
+                this.RecordAndNotifyAlert(anomaly, true)
+            this.PushMobileSnapshotIfRunning()
+
             let okMsg = format "{0}件のコンテナ" "{0} containers" [| box containers.Count |]
             if refreshing then
                 pendingRefreshStatus <- Some okMsg
@@ -261,6 +316,67 @@ type MainViewModel(
             else
                 this.ShowStatus(okMsg)
                 this.SetConnectionDetails("")
+            return true
+        | Error message ->
+            this.ShowErrorStatus(localizeDockerError message)
+            return false
+    }
+
+    /// <summary>ボリューム一覧を一覧更新・フィルタリングし、容量しきい値超過アラートを判定する。</summary>
+    let refreshVolumesCore () : Async<bool> = async {
+        let! result =
+            match volumeListFetcher with
+            | Some fetcher -> fetcher()
+            | None when containerListFetcher.IsSome -> async.Return (Ok [])
+            | None -> docker.ListVolumes(containers |> Seq.toList)
+        match result with
+        | Ok items ->
+            let selectedName = if isNull selectedVolume then None else Some selectedVolume.Name
+            let incomingNames = items |> List.map (fun item -> item.Name) |> Set.ofList
+            updatingVolumeList <- true
+            try
+                for index = volumes.Count - 1 downto 0 do
+                    if not (incomingNames.Contains(volumes.[index].Name)) then
+                        volumes.RemoveAt(index)
+                for snap in items do
+                    match volumes |> Seq.tryFind (fun v -> v.Name = snap.Name) with
+                    | Some existing ->
+                        existing.UpdateFrom(snap)
+                        existing.LanguageCode <- languageCode
+                    | None ->
+                        let v = VolumeInfo(snap)
+                        v.LanguageCode <- languageCode
+                        volumes.Add(v)
+            finally
+                updatingVolumeList <- false
+            this.ApplyVolumeFilters()
+            match selectedName with
+            | Some name when incomingNames.Contains(name) ->
+                match filteredVolumes |> Seq.tryFind (fun v -> v.Name = name) with
+                | Some current when not (obj.ReferenceEquals(selectedVolume, current)) ->
+                    this.SelectedVolume <- current
+                | _ -> ()
+            | Some _ -> this.SelectedVolume <- null
+            | None -> ()
+
+            this.NotifyProperty(nameof this.VolumeSummaryText)
+            this.NotifyProperty(nameof this.UnusedVolumeSummaryText)
+            this.NotifyProperty(nameof this.HasVolumes)
+            this.NotifyProperty(nameof this.HasNoFilteredVolumes)
+            this.NotifyProperty(nameof this.HasSelectedContainerMounts)
+            this.NotifyProperty(nameof this.SelectedContainerMountsText)
+
+            let volAlerts, nextLevels =
+                AlertMonitor.detectVolumeThresholdAlerts
+                    VolumeParser.volumeWarningThresholdBytes
+                    VolumeParser.volumeDangerThresholdBytes
+                    previousVolumeAlertLevels
+                    items
+                    DateTimeOffset.UtcNow
+            previousVolumeAlertLevels <- nextLevels
+            for alert in volAlerts do
+                this.RecordAndNotifyAlert(alert, true)
+            this.PushMobileSnapshotIfRunning()
             return true
         | Error message ->
             this.ShowErrorStatus(localizeDockerError message)
@@ -328,10 +444,32 @@ type MainViewModel(
             composeProjects
             |> Seq.filter (fun project -> project.StatusKey = "partial" || (project.StatusKey = "stopped" && project.TotalContainerCount > 0))
             |> Seq.map (fun project ->
+                project,
                 project.FolderPath, localize "Compose異常" "Compose warning",
                 sprintf "%s: %s (%s) %s" project.Name project.Status project.RunningCountLabel project.Warning)
             |> Seq.toList
-        for notification in composeAlerts.Update(notificationsEnabled, alerts) do alertRaised.Trigger(notification)
+        let rawAlerts = alerts |> List.map (fun (_, key, title, msg) -> key, title, msg)
+        for notification in composeAlerts.Update(notificationsEnabled, rawAlerts) do
+            alertRaised.Trigger(notification)
+            let (title, msg) = notification
+            this.SendDesktopNotification(title, msg)
+        for (key, _, msg) in composeHistoryTracker.UpdateDetailed(true, rawAlerts) do
+            let projName =
+                alerts
+                |> List.tryPick (fun (p, k, _, _) -> if k = key then Some p.Name else None)
+                |> Option.defaultValue "Compose"
+            let entry =
+                {
+                    Id = 0L
+                    OccurredAt = DateTimeOffset.UtcNow.ToString("o")
+                    Severity = AlertSeverity.Warning
+                    Category = AlertCategory.ComposeAnomaly
+                    TargetId = key
+                    TargetName = projName
+                    TitleKey = "Compose異常"
+                    Message = msg
+                }
+            this.RecordAndNotifyAlert(entry, false)
         if allSucceeded && not refreshing then
             this.ClearErrorStatus()
             if dockerDesktopState = "running" then this.SetConnectionDetails("")
@@ -368,13 +506,27 @@ type MainViewModel(
             if composeUsesSameEngine then stopComposeLogFollow()
             containers.Clear()
             images.Clear()
+            volumes.Clear()
+            filteredVolumes.Clear()
             stats.Clear()
             resourceAlerts.Reset()
-            if composeUsesSameEngine then composeAlerts.Reset()
+            resourceHistoryTracker.Reset()
+            if composeUsesSameEngine then
+                composeAlerts.Reset()
+                composeHistoryTracker.Reset()
+            containerMonitorBaselineDone <- false
+            previousContainerSnapshots <- Map.empty
+            previousVolumeAlertLevels <- Map.empty
             this.SelectedContainer <- null
             this.SelectedImage <- null
+            this.SelectedVolume <- null
+            this.NotifyProperty(nameof this.VolumeSummaryText)
+            this.NotifyProperty(nameof this.UnusedVolumeSummaryText)
+            this.NotifyProperty(nameof this.HasVolumes)
+            this.NotifyProperty(nameof this.HasNoFilteredVolumes)
             if composeUsesSameEngine then
                 for project in composeProjects do project.UpdateStatus("unknown", 0)
+            this.PushMobileSnapshotIfRunning()
             this.ShowStatus("")
             return false
     }
@@ -401,10 +553,32 @@ type MainViewModel(
             let alerts =
                 items |> List.collect (fun (item: ContainerStats) ->
                     [ if item.CpuLevel = 2 then
-                          yield "cpu:" + item.Container, localize "高CPU使用率" "High CPU usage", sprintf "%s: CPU %s" item.Container item.Cpu
+                          yield "cpu:" + item.Container, localize "高CPU使用率" "High CPU usage", sprintf "%s: CPU %s" item.Container item.Cpu, item.Container, "高CPU使用率"
                       if item.MemoryLevel = 2 then
-                          yield "memory:" + item.Container, localize "高メモリ使用率" "High memory usage", sprintf "%s: %s (%s)" item.Container item.Memory item.MemoryPercent ])
-            for notification in resourceAlerts.Update(notificationsEnabled, alerts) do alertRaised.Trigger(notification)
+                          yield "memory:" + item.Container, localize "高メモリ使用率" "High memory usage", sprintf "%s: %s (%s)" item.Container item.Memory item.MemoryPercent, item.Container, "高メモリ使用率" ])
+            let rawAlerts = alerts |> List.map (fun (k, t, m, _, _) -> k, t, m)
+            for notification in resourceAlerts.Update(notificationsEnabled, rawAlerts) do
+                alertRaised.Trigger(notification)
+                let (title, msg) = notification
+                this.SendDesktopNotification(title, msg)
+            for (key, _, msg) in resourceHistoryTracker.UpdateDetailed(true, rawAlerts) do
+                let targetName, titleKey =
+                    alerts
+                    |> List.tryPick (fun (k, _, _, cName, tKey) -> if k = key then Some(cName, tKey) else None)
+                    |> Option.defaultValue ("", "警告")
+                let entry =
+                    {
+                        Id = 0L
+                        OccurredAt = DateTimeOffset.UtcNow.ToString("o")
+                        Severity = AlertSeverity.Warning
+                        Category = AlertCategory.HighResourceUsage
+                        TargetId = key
+                        TargetName = targetName
+                        TitleKey = titleKey
+                        Message = msg
+                    }
+                this.RecordAndNotifyAlert(entry, false)
+            this.PushMobileSnapshotIfRunning()
             return true
         | Error message ->
             stats.Clear()
@@ -413,7 +587,7 @@ type MainViewModel(
             return false
     }
 
-    /// <summary>ダッシュボード全体（接続状態・コンテナ・イメージ・Compose・統計）を一括更新する。</summary>
+    /// <summary>ダッシュボード全体（接続状態・コンテナ・イメージ・ボリューム・Compose・統計）を一括更新する。</summary>
     let refreshDashboard includeImages = async {
         if not refreshing then
             refreshing <- true
@@ -430,9 +604,15 @@ type MainViewModel(
                     let! imagesOk =
                         if includeImages || not wasConnected then refreshImagesCore()
                         else async.Return true
+                    volumeRefreshTickCount <- volumeRefreshTickCount + 1
+                    let shouldRefreshVolumes = includeImages || not wasConnected || (volumeRefreshTickCount % 6 = 0)
+                    let! volumesOk =
+                        if shouldRefreshVolumes then refreshVolumesCore()
+                        else async.Return true
                     let! composeOk = refreshComposeStatuses()
                     let! statsOk = refreshStatsCore()
-                    if containersOk && imagesOk && composeOk && statsOk then
+                    this.PushMobileSnapshotIfRunning()
+                    if containersOk && imagesOk && volumesOk && composeOk && statsOk then
                         match pendingRefreshStatus with
                         | Some msg -> this.ShowStatus(msg)
                         | None -> this.ClearErrorStatus()
@@ -654,6 +834,11 @@ type MainViewModel(
     do
         connectionOptions.Add(ChoiceOption("local", localize "ローカル" "Local"))
         for connection in settings.SshConnections do connectionOptions.Add(ChoiceOption(connection.Id, connection.Name))
+        this.RebuildFaqCategoryOptions()
+        alertHistoryEntries <- AlertHistoryRepository.GetRecent()
+        this.RefreshLanIpCandidates()
+        mobileServer.SessionStateChanged.Add(fun st -> postOnUI (fun () -> this.ApplyMobileSessionStatus(st)))
+        this.ApplyMobileSessionStatus(mobileServer.GetStatus())
         timer.Tick.Add(fun _ -> if not refreshing then refreshDashboard false |> Async.StartImmediate)
         if defaultArg startAutomatically true then
             if autoRefresh then timer.Start()
@@ -768,12 +953,26 @@ type MainViewModel(
                         composeCli <- docker
                     containers.Clear()
                     images.Clear()
+                    volumes.Clear()
+                    filteredVolumes.Clear()
                     stats.Clear()
                     composeProjects.Clear()
                     for project in settings.ComposeProjects do
                         if isComposeInScope project then composeProjects.Add(project)
                     resourceAlerts.Reset()
                     composeAlerts.Reset()
+                    resourceHistoryTracker.Reset()
+                    composeHistoryTracker.Reset()
+                    containerMonitorBaselineDone <- false
+                    previousContainerSnapshots <- Map.empty
+                    previousVolumeAlertLevels <- Map.empty
+                    latestDiagnosticsSummaries <- Map.empty
+                    this.SelectedVolume <- null
+                    this.NotifyProperty(nameof this.VolumeSummaryText)
+                    this.NotifyProperty(nameof this.UnusedVolumeSummaryText)
+                    this.NotifyProperty(nameof this.HasVolumes)
+                    this.NotifyProperty(nameof this.HasNoFilteredVolumes)
+                    this.PushMobileSnapshotIfRunning()
                     this.NewComposeName <- ""
                     this.NewComposePath <- ""
                     this.NewComposeUrl <- ""
@@ -839,10 +1038,12 @@ type MainViewModel(
         and set (option: ChoiceOption) =
             if not (isNull option) && languageCode <> option.Key then
                 languageCode <- Localization.normalizeCode(option.Key)
+                selectedFaqLangKey <- FaqData.resolveFaqLanguage languageCode
                 this.OnPropertyChanged(nameof this.Language)
                 settings.Language <- languageCode
                 AppSettings.Save(settings)
                 for container in containers do container.LanguageCode <- languageCode
+                for vol in volumes do vol.LanguageCode <- languageCode
                 for project in composeProjects do project.LanguageCode <- languageCode
                 for item in stats do item.LanguageCode <- languageCode
                 connectionOptions.[0].Label <- localize "ローカル" "Local"
@@ -861,7 +1062,7 @@ type MainViewModel(
                       nameof this.SaveSshLabel; nameof this.NewSshLabel
                       nameof this.NotificationsLabel; nameof this.WarningLabel; nameof this.MemoryPercentLabel
                       nameof this.RefreshLabel; nameof this.RefreshIntervalLabel; nameof this.TabContainersLabel
-                      nameof this.TabImagesLabel; nameof this.TabComposeLabel
+                      nameof this.TabImagesLabel; nameof this.TabVolumesLabel; nameof this.TabComposeLabel
                       nameof this.ContainerNameLabel; nameof this.StateLabel; nameof this.PublishedPortsLabel
                       nameof this.ImageLabel; nameof this.CreatedAtLabel
                       nameof this.StartLabel; nameof this.StopLabel; nameof this.RestartLabel
@@ -885,10 +1086,14 @@ type MainViewModel(
                       nameof this.InferenceNoMaterialText; nameof this.InferenceDialogNote; nameof this.CloseLabel
                       nameof this.InferenceDetailButtonLabel; nameof this.ImageCandidateText; nameof this.PortCandidatesTexts
                       nameof this.OperationLogHeader; nameof this.OperationLogEmptyText
-                      nameof this.SelectedContainerOperationLogs; nameof this.SelectedComposeOperationLogs ] do
+                      nameof this.SelectedContainerOperationLogs; nameof this.SelectedComposeOperationLogs
+                      nameof this.MountedVolumesLabel; nameof this.SelectedContainerMountsText ] do
                     this.OnPropertyChanged(propertyName)
                 this.NotifyDiagnosticsProperties()
                 this.NotifyInfoProperties()
+                this.NotifyV12Properties()
+                this.ApplyMobileSessionStatus(mobileServer.GetStatus())
+                this.PushMobileSnapshotIfRunning()
                 if isNull selectedContainer then
                     this.ShowLogs(localize "ログを表示するコンテナを選択してください。" "Select a container to view its logs.")
                 if isNull selectedComposeProject then
@@ -1129,7 +1334,16 @@ type MainViewModel(
                     let fromPorts = candidates.FromPorts |> List.map (fun s -> s.ServiceId)
                     let targetServices = (fromImg @ fromPorts) |> List.distinct
 
+                    let containerMounts = container.Mounts
+                    let volumeSnapshotList = volumes |> Seq.map (fun v -> v.Snapshot) |> Seq.toList
                     let result = ServiceDiagnostics.diagnose inspectDataOpt targetServices logLines
+                    let volumeFindings = VolumeParser.diagnoseContainerVolumes containerMounts volumeSnapshotList
+                    let combinedFindings =
+                        (result.Findings @ volumeFindings)
+                        |> List.sortWith (fun a b ->
+                            let rank = function FindingSeverity.Danger -> 0 | FindingSeverity.Warning -> 1 | FindingSeverity.Info -> 2
+                            compare (rank a.Severity) (rank b.Severity))
+                    let finalResult = { result with Findings = combinedFindings }
 
                     // ローカル SQLite のマスターデータを用いたバージョン診断
                     let snapshot = MasterDataRepository.GetSnapshot()
@@ -1146,10 +1360,19 @@ type MainViewModel(
                             let rank = function FindingSeverity.Danger -> 0 | FindingSeverity.Warning -> 1 | FindingSeverity.Info -> 2
                             compare (rank a.Severity) (rank b.Severity))
 
+                    let allFindingsForSummary = finalResult.Findings @ versionFindings
+                    let dangerCount = allFindingsForSummary |> List.filter (fun f -> f.Severity = FindingSeverity.Danger) |> List.length
+                    let warningCount = allFindingsForSummary |> List.filter (fun f -> f.Severity = FindingSeverity.Warning) |> List.length
+                    let topTitles = allFindingsForSummary |> List.truncate 2 |> List.map (fun f -> Localization.translateKey languageCode f.TitleKey)
+                    let dangerAlertOpt = AlertMonitor.createDiagnosticsDangerAlert containerId container.Name allFindingsForSummary DateTimeOffset.UtcNow
+
                     postOnUI (fun () ->
                         masterDataSnapshot <- snapshot
+                        latestDiagnosticsSummaries <- Map.add containerId (dangerCount, warningCount, topTitles) latestDiagnosticsSummaries
+                        dangerAlertOpt |> Option.iter (fun alert -> this.RecordAndNotifyAlert(alert, true))
+                        this.PushMobileSnapshotIfRunning()
                         if not (isNull selectedContainer) && selectedContainer.Id = containerId then
-                            currentDiagnosticsResult <- Some result
+                            currentDiagnosticsResult <- Some finalResult
                             currentVersionFindings <- versionFindings
                             this.IsDiagnosing <- false
                             this.NotifyDiagnosticsProperties()
@@ -1523,6 +1746,8 @@ type MainViewModel(
                 this.OnPropertyChanged(nameof this.InferredServicesText)
                 this.OnPropertyChanged(nameof this.HasInferredServices)
                 this.OnPropertyChanged(nameof this.HasSelectedContainer)
+                this.OnPropertyChanged(nameof this.HasSelectedContainerMounts)
+                this.OnPropertyChanged(nameof this.SelectedContainerMountsText)
                 this.OnPropertyChanged(nameof this.HasImageCandidate)
                 this.OnPropertyChanged(nameof this.ImageCandidateText)
                 this.OnPropertyChanged(nameof this.HasPortCandidates)
@@ -2037,10 +2262,535 @@ type MainViewModel(
                     | Error message -> this.ShowErrorStatus(localizeDockerError message)
             }
 
+    // --- 📦 ボリューム情報（v1.2・読み取り専用） ---
+
+    /// <summary>読み込まれている全ボリュームコレクション。</summary>
+    member _.Volumes = volumes
+
+    /// <summary>検索・未使用フィルタ適用後のボリューム一覧。</summary>
+    member _.FilteredVolumes = filteredVolumes
+
+    /// <summary>現在選択中のボリューム。</summary>
+    member this.SelectedVolume
+        with get () = selectedVolume
+        and set value =
+            if updatingVolumeList && isNull value && not (isNull selectedVolume) then
+                ()
+            elif this.SetProperty(&selectedVolume, value) then
+                this.OnPropertyChanged(nameof this.HasSelectedVolume)
+
+    /// <summary>ボリュームが 1 件以上選択されているか。</summary>
+    member _.HasSelectedVolume = not (isNull selectedVolume)
+
+    /// <summary>未フィルタのボリュームが 1 件以上存在するか。</summary>
+    member _.HasVolumes = volumes.Count > 0
+
+    /// <summary>絞り込み結果が 0 件かどうか。</summary>
+    member _.HasNoFilteredVolumes = filteredVolumes.Count = 0
+
+    /// <summary>未使用ボリュームのみ表示するか。</summary>
+    member this.ShowUnusedVolumesOnly
+        with get () = showUnusedVolumesOnly
+        and set value =
+            if this.SetProperty(&showUnusedVolumesOnly, value) then
+                this.ApplyVolumeFilters()
+
+    /// <summary>ボリューム名・コンテナ名での検索クエリ。</summary>
+    member this.VolumeSearchText
+        with get () = volumeSearchText
+        and set value =
+            let next = if isNull value then "" else value
+            if this.SetProperty(&volumeSearchText, next) then
+                this.ApplyVolumeFilters()
+
+    /// <summary>ボリューム一覧の絞り込みを適用する。</summary>
+    member internal this.ApplyVolumeFilters() =
+        let prevSelectedName = if isNull selectedVolume then None else Some selectedVolume.Name
+        let q = volumeSearchText.Trim().ToLowerInvariant()
+        let matches (v: VolumeInfo) =
+            let unusedOk = (not showUnusedVolumesOnly) || v.IsUnused
+            let searchOk =
+                String.IsNullOrWhiteSpace(q)
+                || v.Name.ToLowerInvariant().Contains(q)
+                || v.DisplayName.ToLowerInvariant().Contains(q)
+                || v.Driver.ToLowerInvariant().Contains(q)
+                || v.AttachedContainersSummary.ToLowerInvariant().Contains(q)
+            unusedOk && searchOk
+
+        let desired = volumes |> Seq.filter matches |> Seq.toList
+        let desiredNames = desired |> List.map (fun v -> v.Name) |> Set.ofList
+        updatingVolumeList <- true
+        try
+            filteredVolumes.Clear()
+            for v in desired do
+                filteredVolumes.Add(v)
+        finally
+            updatingVolumeList <- false
+        match prevSelectedName with
+        | Some n when desiredNames.Contains(n) ->
+            selectedVolume <- filteredVolumes |> Seq.tryFind (fun v -> v.Name = n) |> Option.defaultValue null
+            this.OnPropertyChanged(nameof this.SelectedVolume)
+            this.OnPropertyChanged(nameof this.HasSelectedVolume)
+        | _ ->
+            if not (isNull selectedVolume) then
+                this.SelectedVolume <- null
+        this.OnPropertyChanged(nameof this.HasNoFilteredVolumes)
+
+    /// <summary>選択中コンテナがボリュームをマウントしているか。</summary>
+    member _.HasSelectedContainerMounts =
+        not (isNull selectedContainer) && selectedContainer.HasVolumeMounts
+
+    /// <summary>選択中コンテナのマウント中ボリュームと判明容量の要約テキスト。</summary>
+    member _.SelectedContainerMountsText =
+        match selectedContainer with
+        | null -> ""
+        | c ->
+            let mounts = c.VolumeMounts
+            if List.isEmpty mounts then ""
+            else
+                mounts
+                |> List.map (fun m ->
+                    let vName = if String.IsNullOrWhiteSpace(m.VolumeName) then m.Source else m.VolumeName
+                    let volOpt = volumes |> Seq.tryFind (fun v -> String.Equals(v.Name, vName, StringComparison.OrdinalIgnoreCase))
+                    let shortName =
+                        match volOpt with
+                        | Some v -> v.DisplayName
+                        | None -> VolumeParser.shortDisplayName vName (VolumeParser.isAnonymousName vName None)
+                    let sizeSuffix =
+                        match volOpt with
+                        | Some v -> sprintf " (%s)" v.SizeText
+                        | None -> ""
+                    if String.IsNullOrWhiteSpace(m.Destination) then sprintf "%s%s" shortName sizeSuffix
+                    else sprintf "%s → %s%s" shortName m.Destination sizeSuffix)
+                |> String.concat ", "
+
+    member _.TabVolumesLabel = localize "ボリューム" "Volumes"
+    member _.VolumeNameLabel = localize "ボリューム名" "Volume name"
+    member _.VolumeDriverLabel = localize "ドライバ" "Driver"
+    member _.VolumeMountpointLabel = localize "マウント先" "Mount point"
+    member _.VolumeSizeLabel = localize "使用容量" "Size"
+    member _.VolumeAttachedLabel = localize "紐付けコンテナ" "Attached containers"
+    member _.VolumeKindLabel = localize "種別" "Type"
+    member _.VolumeReadOnlyNotice = localize "読み取り専用（削除・prune は実行しません）" "Read-only (no delete or prune is performed)"
+    member _.VolumeUnusedOnlyLabel = localize "未使用のみ表示" "Show unused only"
+    member _.VolumeSearchPlaceholder = localize "ボリューム名・コンテナ名で絞り込み..." "Filter by volume or container name..."
+    member _.VolumesEmptyText = localize "ボリュームはありません。" "No volumes found."
+    member _.VolumeDetailPlaceholder = localize "ボリュームを選択すると詳細と紐付けコンテナを表示します。" "Select a volume to inspect its details and attached containers."
+    member _.VolumeDetailTitle = localize "ボリューム詳細" "Volume details"
+    member _.MountedVolumesLabel = localize "マウント中ボリューム" "Mounted volumes"
+
+    member _.VolumeSummaryText =
+        let totalBytes = volumes |> Seq.choose (fun v -> v.SizeBytes) |> Seq.sum
+        format "{0}件のボリューム / 合計 {1}" "{0} volumes / Total {1}" [| box volumes.Count; box (VolumeParser.formatByteSize totalBytes) |]
+
+    member _.UnusedVolumeSummaryText =
+        let unusedList = volumes |> Seq.filter (fun v -> v.IsUnused) |> Seq.toList
+        let unusedBytes = unusedList |> List.choose (fun v -> v.SizeBytes) |> List.sum
+        format "未使用: {0}件 ({1})" "Unused: {0} ({1})" [| box unusedList.Length; box (VolumeParser.formatByteSize unusedBytes) |]
+
+    /// <summary>ボリューム一覧のみ手動再取得する。</summary>
+    member _.RefreshVolumesAsync() = async {
+        if dockerDesktopState = "running" then
+            let! _ = refreshVolumesCore()
+            ()
+    }
+
+    // --- 🚨 監視アラート履歴・アプリ内バナー・OS通知（v1.2） ---
+
+    /// <summary>OS デスクトップ通知（ベストエフォート）を発行する。</summary>
+    member private _.SendDesktopNotification(title: string, message: string) =
+        match osNotifier with
+        | Some custom -> try custom title message with _ -> ()
+        | None ->
+            if defaultArg startAutomatically true then
+                OsNotifier.sendDesktopNotification title message
+
+    /// <summary>アラートを SQLite に保存し、PC バナー・OS通知・スマホ SSE へ配信する。</summary>
+    member internal this.RecordAndNotifyAlert(entry: AlertEventEntry, emitToastAndOs: bool) =
+        let saved = AlertHistoryRepository.Record(entry)
+        alertHistoryEntries <- AlertHistoryRepository.GetRecent()
+        activeAlertBanner <- Some saved
+        this.NotifyAlertProperties()
+        if mobileServer.IsRunning then
+            mobileServer.PushAlert(saved)
+        if emitToastAndOs && notificationsEnabled then
+            let title = Localization.translateKey languageCode saved.TitleKey
+            let msg =
+                if String.IsNullOrWhiteSpace(saved.TargetName) then saved.Message
+                else sprintf "%s: %s" saved.TargetName saved.Message
+            alertRaised.Trigger(title, msg)
+            this.SendDesktopNotification(title, msg)
+
+    member private this.NotifyAlertProperties() =
+        this.OnPropertyChanged(nameof this.AlertHistory)
+        this.OnPropertyChanged(nameof this.HasAlertHistory)
+        this.OnPropertyChanged(nameof this.HasNoAlertHistory)
+        this.OnPropertyChanged(nameof this.HasActiveAlertBanner)
+        this.OnPropertyChanged(nameof this.ActiveAlertBannerTitle)
+        this.OnPropertyChanged(nameof this.ActiveAlertBannerMessage)
+        this.OnPropertyChanged(nameof this.ActiveAlertBannerSeverityBadge)
+        this.OnPropertyChanged(nameof this.ActiveAlertBannerBrush)
+
+    /// <summary>アラート履歴表示用一覧（最新順）。</summary>
+    member _.AlertHistory : AlertDisplayItem list =
+        alertHistoryEntries |> List.map (fun e -> AlertDisplayItem(e, languageCode))
+
+    member _.HasAlertHistory = not (List.isEmpty alertHistoryEntries)
+    member _.HasNoAlertHistory = List.isEmpty alertHistoryEntries
+    member _.AlertHistoryHeader = localize "アラート履歴" "Alert history"
+    member _.AlertHistoryEmptyText = localize "アラート履歴はまだありません。" "No alerts recorded yet."
+
+    member _.HasActiveAlertBanner = activeAlertBanner.IsSome
+    member _.ActiveAlertBannerSeverityBadge =
+        match activeAlertBanner with
+        | Some a -> AlertMonitor.severityBadge a.Severity
+        | None -> ""
+    member _.ActiveAlertBannerTitle =
+        match activeAlertBanner with
+        | Some a ->
+            sprintf "%s (%s)" (Localization.translateKey languageCode a.TitleKey) (AlertMonitor.formatTimestamp a.OccurredAt)
+        | None -> ""
+    member _.ActiveAlertBannerMessage =
+        match activeAlertBanner with
+        | Some a ->
+            if String.IsNullOrWhiteSpace(a.TargetName) then a.Message
+            else sprintf "%s — %s" a.TargetName a.Message
+        | None -> ""
+    member _.ActiveAlertBannerBrush : IBrush =
+        match activeAlertBanner with
+        | Some a when a.Severity = AlertSeverity.Danger -> Brushes.Crimson
+        | Some _ -> Brushes.DarkGoldenrod
+        | None -> Brushes.Transparent
+    member _.ActiveAlertBannerDismissTooltip = localize "アラートを閉じる" "Dismiss alert"
+
+    /// <summary>画面上部のアラートバナーを閉じる。</summary>
+    member this.DismissAlertBanner() =
+        activeAlertBanner <- None
+        this.NotifyAlertProperties()
+
+    // --- ❓ 初心者向け FAQ ダイアログ（v1.2） ---
+
+    member this.IsFaqDialogOpen
+        with get () = isFaqDialogOpen
+        and set value = this.SetProperty(&isFaqDialogOpen, value) |> ignore
+
+    member private _.RebuildFaqCategoryOptions() =
+        let allOpt = ChoiceOption("all", localize "すべて" "All")
+        let catOpts =
+            FaqData.categoriesForLanguage selectedFaqLangKey
+            |> List.map (fun c -> ChoiceOption(c.Id, sprintf "%s %s" c.Icon c.Title))
+        faqCategoryOptions <- (allOpt :: catOpts) |> List.toArray
+
+    member this.OpenFaqDialog() =
+        selectedFaqLangKey <- FaqData.resolveFaqLanguage languageCode
+        this.NotifyFaqProperties()
+        this.IsFaqDialogOpen <- true
+
+    member this.CloseFaqDialog() =
+        this.IsFaqDialogOpen <- false
+
+    member _.FaqLanguageOptions = faqLanguageOptions
+
+    member this.SelectedFaqLanguage
+        with get () =
+            faqLanguageOptions
+            |> Array.tryFind (fun o -> o.Key = selectedFaqLangKey)
+            |> Option.defaultValue faqLanguageOptions.[0]
+        and set (value: ChoiceOption) =
+            if not (isNull value) && selectedFaqLangKey <> value.Key then
+                selectedFaqLangKey <- FaqData.resolveFaqLanguage value.Key
+                selectedFaqCategoryKey <- "all"
+                this.NotifyFaqProperties()
+
+    member _.FaqCategoryOptions = faqCategoryOptions
+
+    member this.SelectedFaqCategory
+        with get () =
+            faqCategoryOptions
+            |> Array.tryFind (fun o -> o.Key = selectedFaqCategoryKey)
+            |> Option.defaultValue faqCategoryOptions.[0]
+        and set (value: ChoiceOption) =
+            if not (isNull value) && selectedFaqCategoryKey <> value.Key then
+                selectedFaqCategoryKey <- value.Key
+                this.OnPropertyChanged(nameof this.SelectedFaqCategory)
+                this.OnPropertyChanged(nameof this.FilteredFaqItems)
+                this.OnPropertyChanged(nameof this.HasNoFaqMatches)
+
+    member this.FaqSearchText
+        with get () = faqSearchText
+        and set value =
+            let next = if isNull value then "" else value
+            if this.SetProperty(&faqSearchText, next) then
+                this.OnPropertyChanged(nameof this.FilteredFaqItems)
+                this.OnPropertyChanged(nameof this.HasNoFaqMatches)
+
+    member _.FilteredFaqItems : FaqDisplayItem list =
+        let catOpt = if selectedFaqCategoryKey = "all" then None else Some selectedFaqCategoryKey
+        FaqData.filterItems selectedFaqLangKey catOpt faqSearchText
+
+    member this.HasNoFaqMatches = List.isEmpty this.FilteredFaqItems
+    member _.ShowFaqEnglishFallbackNote = FaqData.isEnglishFallback languageCode && selectedFaqLangKey = "en-US"
+    member _.FaqEnglishFallbackText = localize "この言語では FAQ 本文を英語で表示しています。" "FAQ articles are displayed in English for this language."
+    member _.FaqDialogTitle = localize "初心者向け FAQ" "Beginner FAQ"
+    member _.FaqDialogSubtitle = localize "コンテナ・Compose・ボリューム・スマホ連携の基本Q&A" "Essential Q&A for containers, Compose, volumes, and phone QR"
+    member _.FaqSearchPlaceholder = localize "キーワードで絞り込み..." "Filter by keyword..."
+    member _.FaqTtsHintText = localize "音声読み上げ（🔊）はスマホ連携ページの FAQ タブで利用できます。" "Read-aloud (🔊) is available in the FAQ tab of the Phone QR page."
+    member _.FaqEmptyText = localize "一致する質問が見つかりませんでした。" "No matching questions were found."
+
+    member private this.NotifyFaqProperties() =
+        this.RebuildFaqCategoryOptions()
+        this.OnPropertyChanged(nameof this.SelectedFaqLanguage)
+        this.OnPropertyChanged(nameof this.FaqCategoryOptions)
+        this.OnPropertyChanged(nameof this.SelectedFaqCategory)
+        this.OnPropertyChanged(nameof this.FilteredFaqItems)
+        this.OnPropertyChanged(nameof this.HasNoFaqMatches)
+        this.OnPropertyChanged(nameof this.ShowFaqEnglishFallbackNote)
+        this.OnPropertyChanged(nameof this.FaqEnglishFallbackText)
+        this.OnPropertyChanged(nameof this.FaqDialogTitle)
+        this.OnPropertyChanged(nameof this.FaqDialogSubtitle)
+        this.OnPropertyChanged(nameof this.FaqSearchPlaceholder)
+        this.OnPropertyChanged(nameof this.FaqTtsHintText)
+        this.OnPropertyChanged(nameof this.FaqEmptyText)
+
+    // --- 📱 スマホ連携 QR セッション（v1.2） ---
+
+    member private this.BuildMobileSnapshot() : MobileDashboardSnapshot =
+        let containerDtos =
+            containers
+            |> Seq.map (fun c ->
+                let stateKey =
+                    if c.Status.StartsWith("Up", StringComparison.OrdinalIgnoreCase) then "running"
+                    elif c.Status.StartsWith("Restarting", StringComparison.OrdinalIgnoreCase) then "restarting"
+                    else "stopped"
+                let dangerCount, warnCount, topTitles =
+                    Map.tryFind c.Id latestDiagnosticsSummaries |> Option.defaultValue (0, 0, [])
+                {
+                    Id = c.Id
+                    Name = c.Name
+                    Status = c.Status
+                    StateKey = stateKey
+                    Image = c.Image
+                    Ports = c.PublishedPorts
+                    ResourceSummary = c.ResourceSummary
+                    MountsSummary = c.MountedVolumesSummary
+                    HasDangerDiagnostics = dangerCount > 0
+                    HasWarningDiagnostics = warnCount > 0
+                    DiagnosticsNote = String.concat ", " topTitles
+                })
+            |> Seq.toList
+        let volumeDtos =
+            volumes
+            |> Seq.map (fun v ->
+                {
+                    Name = v.Name
+                    DisplayName = v.DisplayName
+                    Driver = v.Driver
+                    SizeText = v.SizeText
+                    SizeBytes = v.SizeBytes
+                    SizeLevel = v.SizeLevel
+                    IsAnonymous = v.IsAnonymous
+                    IsUnused = v.IsUnused
+                    AttachedSummary = v.AttachedContainersSummary
+                })
+            |> Seq.toList
+        let totalVolBytes = volumes |> Seq.choose (fun v -> v.SizeBytes) |> Seq.sum
+        let unusedVols = volumes |> Seq.filter (fun v -> v.IsUnused) |> Seq.toList
+        let unusedVolBytes = unusedVols |> List.choose (fun v -> v.SizeBytes) |> List.sum
+        let alertDtos =
+            alertHistoryEntries
+            |> List.truncate 50
+            |> List.map (fun a ->
+                {
+                    Id = a.Id
+                    OccurredAt = a.OccurredAt
+                    OccurredAtLocal = AlertMonitor.formatTimestamp a.OccurredAt
+                    Severity = AlertMonitor.severityToDbString a.Severity
+                    Category = AlertMonitor.categoryToDbString a.Category
+                    TargetName = a.TargetName
+                    Title = Localization.translateKey languageCode a.TitleKey
+                    Message = a.Message
+                })
+        {
+            UpdatedAtUtc = DateTimeOffset.UtcNow.ToString("o")
+            LanguageCode = languageCode
+            EngineMode = ContainerRuntime.displayName activeRuntime
+            EngineRunning = (dockerDesktopState = "running")
+            Containers = containerDtos
+            Volumes = volumeDtos
+            TotalVolumeBytes = totalVolBytes
+            UnusedVolumeCount = unusedVols.Length
+            UnusedVolumeBytes = unusedVolBytes
+            Alerts = alertDtos
+        }
+
+    member private this.PushMobileSnapshotIfRunning() =
+        if mobileServer.IsRunning then
+            mobileServer.UpdateSnapshot(this.BuildMobileSnapshot())
+
+    member private this.RefreshLanIpCandidates() =
+        let prevAddr = if isNull selectedLanIp then None else Some selectedLanIp.Key
+        let detected = NetworkHelpers.detectLocalIpCandidates ()
+        lanIpCandidates.Clear()
+        for c in detected do
+            lanIpCandidates.Add(ChoiceOption(c.Address, c.Label))
+        selectedLanIp <-
+            match prevAddr with
+            | Some addr ->
+                lanIpCandidates |> Seq.tryFind (fun o -> o.Key = addr) |> Option.defaultWith (fun () -> if lanIpCandidates.Count > 0 then lanIpCandidates.[0] else null)
+            | None ->
+                if lanIpCandidates.Count > 0 then lanIpCandidates.[0] else null
+        this.OnPropertyChanged(nameof this.LanIpCandidates)
+        this.OnPropertyChanged(nameof this.SelectedLanIp)
+        this.OnPropertyChanged(nameof this.IsLoopbackLanIpSelected)
+
+    member private this.UpdateMobileUrlAndQr(st: MobileSessionStatus) =
+        let ip = if isNull selectedLanIp then "127.0.0.1" else selectedLanIp.Key
+        let url =
+            if st.IsRunning then mobileServer.GetQrUrl(ip)
+            else ""
+        mobileSessionUrl <- url
+        mobileQrBitmap <-
+            if String.IsNullOrWhiteSpace(url) then null
+            else
+                try QrCodeGenerator.renderQrBitmap url 6 4 :> IImage
+                with _ -> null
+        this.OnPropertyChanged(nameof this.MobileSessionUrl)
+        this.OnPropertyChanged(nameof this.MobileQrBitmap)
+
+    member private this.ApplyMobileSessionStatus(st: MobileSessionStatus) =
+        isMobileServerRunning <- st.IsRunning
+        mobileSessionStatusText <-
+            if st.IsRunning then
+                match st.LockedClientIp with
+                | Some ip -> format "1対1接続中: {0}" "1-on-1 connected: {0}" [| box ip |]
+                | None -> localize "待機中（最初にQRを読み取った1台のみ接続できます）" "Waiting for phone (only the first scanner can connect)"
+            elif st.TimedOut then
+                localize "タイムアウトで切断されました" "Disconnected due to inactivity timeout"
+            else
+                localize "停止中（ボタン操作時のみ起動します）" "Stopped (starts only when you click Start session)"
+        mobileLockedClientText <- st.LockedClientIp |> Option.defaultValue ""
+        this.UpdateMobileUrlAndQr(st)
+        this.OnPropertyChanged(nameof this.IsMobileServerRunning)
+        this.OnPropertyChanged(nameof this.CanStartMobileSession)
+        this.OnPropertyChanged(nameof this.MobileSessionStatusText)
+        this.OnPropertyChanged(nameof this.MobileLockedClientText)
+        this.OnPropertyChanged(nameof this.HasMobileLockedClient)
+
+    member this.IsMobileSessionDialogOpen
+        with get () = isMobileSessionDialogOpen
+        and set value = this.SetProperty(&isMobileSessionDialogOpen, value) |> ignore
+
+    member this.OpenMobileSessionDialog() =
+        this.RefreshLanIpCandidates()
+        this.ApplyMobileSessionStatus(mobileServer.GetStatus())
+        this.NotifyV12Properties()
+        this.IsMobileSessionDialogOpen <- true
+
+    member this.CloseMobileSessionDialog() =
+        this.IsMobileSessionDialogOpen <- false
+
+    member _.LanIpCandidates = lanIpCandidates
+
+    member this.SelectedLanIp
+        with get () = selectedLanIp
+        and set (value: ChoiceOption) =
+            if this.SetProperty(&selectedLanIp, value) then
+                this.UpdateMobileUrlAndQr(mobileServer.GetStatus())
+                this.OnPropertyChanged(nameof this.IsLoopbackLanIpSelected)
+
+    member _.IsLoopbackLanIpSelected =
+        not (isNull selectedLanIp) && selectedLanIp.Key = "127.0.0.1"
+    member _.MobileLoopbackHintText =
+        localize
+            "このループバックアドレスは同じPC内の確認用です。スマホからは 192.168.x.x 等を選択してください。"
+            "Loopback (127.0.0.1) is for local testing on this PC. Select a LAN IP such as 192.168.x.x for phones."
+
+    member _.IsMobileServerRunning = isMobileServerRunning
+    member _.CanStartMobileSession = not isMobileServerRunning
+    member _.MobileSessionUrl = mobileSessionUrl
+    member _.MobileQrBitmap = mobileQrBitmap
+    member _.MobileSessionStatusText = mobileSessionStatusText
+    member _.MobileLockedClientText = mobileLockedClientText
+    member _.HasMobileLockedClient = not (String.IsNullOrWhiteSpace(mobileLockedClientText))
+    member _.MobileSessionError = mobileSessionError
+    member _.HasMobileSessionError = not (String.IsNullOrWhiteSpace(mobileSessionError))
+
+    member _.MobileSessionDialogTitle = localize "スマホ連携 (QR)" "Phone QR view"
+    member _.MobileSessionSubtitle = localize "QRをスマホで読み取ると同じWi-Fi内から閲覧専用ページを開けます。" "Scan the QR code with your phone on the same Wi-Fi to open the read-only status page."
+    member _.MobileSessionReadOnlyNotice = localize "同一 Wi-Fi 内・閲覧専用（操作や外部公開は行いません）。無通信15分で自動切断します。" "Same Wi-Fi only · Read-only (no control or public exposure). Auto-disconnects after 15 min of inactivity."
+    member _.MobileLanIpLabel = localize "接続用 IP アドレス" "Connection IP address"
+    member _.MobileUrlLabel = localize "接続 URL" "Session URL"
+    member _.MobileStartLabel = localize "セッション開始" "Start session"
+    member _.MobileStopLabel = localize "セッション停止" "Stop session"
+    member _.MobileReissueLabel = localize "QR再発行 (ロック解除)" "Reissue QR (unlock)"
+
+    /// <summary>ユーザー操作に応じてスマホ閲覧用のローカルサーバーを起動する。</summary>
+    member this.StartMobileSession() =
+        this.RefreshLanIpCandidates()
+        mobileSessionError <- ""
+        this.OnPropertyChanged(nameof this.MobileSessionError)
+        this.OnPropertyChanged(nameof this.HasMobileSessionError)
+        mobileServer.UpdateSnapshot(this.BuildMobileSnapshot())
+        match mobileServer.Start() with
+        | Ok _ ->
+            this.ApplyMobileSessionStatus(mobileServer.GetStatus())
+        | Error err ->
+            mobileSessionError <- format "サーバー起動に失敗しました: {0}" "Failed to start server: {0}" [| box err |]
+            this.OnPropertyChanged(nameof this.MobileSessionError)
+            this.OnPropertyChanged(nameof this.HasMobileSessionError)
+
+    /// <summary>スマホ閲覧用のローカルサーバーを停止する。</summary>
+    member this.StopMobileSession() =
+        mobileSessionError <- ""
+        this.OnPropertyChanged(nameof this.MobileSessionError)
+        this.OnPropertyChanged(nameof this.HasMobileSessionError)
+        mobileServer.Stop()
+        this.ApplyMobileSessionStatus(mobileServer.GetStatus())
+
+    /// <summary>QR トークンを再発行し、既存の 1 対 1 端末ロックを解除する。</summary>
+    member this.ReissueMobileSession() =
+        if mobileServer.IsRunning then
+            let st = mobileServer.ReissueSession()
+            this.ApplyMobileSessionStatus(st)
+
+    member private this.NotifyV12Properties() =
+        this.OnPropertyChanged(nameof this.TabVolumesLabel)
+        this.OnPropertyChanged(nameof this.VolumeNameLabel)
+        this.OnPropertyChanged(nameof this.VolumeDriverLabel)
+        this.OnPropertyChanged(nameof this.VolumeMountpointLabel)
+        this.OnPropertyChanged(nameof this.VolumeSizeLabel)
+        this.OnPropertyChanged(nameof this.VolumeAttachedLabel)
+        this.OnPropertyChanged(nameof this.VolumeKindLabel)
+        this.OnPropertyChanged(nameof this.VolumeReadOnlyNotice)
+        this.OnPropertyChanged(nameof this.VolumeUnusedOnlyLabel)
+        this.OnPropertyChanged(nameof this.VolumeSearchPlaceholder)
+        this.OnPropertyChanged(nameof this.VolumesEmptyText)
+        this.OnPropertyChanged(nameof this.VolumeDetailPlaceholder)
+        this.OnPropertyChanged(nameof this.VolumeDetailTitle)
+        this.OnPropertyChanged(nameof this.MountedVolumesLabel)
+        this.OnPropertyChanged(nameof this.VolumeSummaryText)
+        this.OnPropertyChanged(nameof this.UnusedVolumeSummaryText)
+        this.OnPropertyChanged(nameof this.SelectedContainerMountsText)
+        this.NotifyAlertProperties()
+        this.OnPropertyChanged(nameof this.AlertHistoryHeader)
+        this.OnPropertyChanged(nameof this.AlertHistoryEmptyText)
+        this.OnPropertyChanged(nameof this.ActiveAlertBannerDismissTooltip)
+        this.NotifyFaqProperties()
+        this.OnPropertyChanged(nameof this.MobileSessionDialogTitle)
+        this.OnPropertyChanged(nameof this.MobileSessionSubtitle)
+        this.OnPropertyChanged(nameof this.MobileSessionReadOnlyNotice)
+        this.OnPropertyChanged(nameof this.MobileLanIpLabel)
+        this.OnPropertyChanged(nameof this.MobileUrlLabel)
+        this.OnPropertyChanged(nameof this.MobileStartLabel)
+        this.OnPropertyChanged(nameof this.MobileStopLabel)
+        this.OnPropertyChanged(nameof this.MobileReissueLabel)
+        this.OnPropertyChanged(nameof this.MobileLoopbackHintText)
+
     interface IDisposable with
-        /// <summary>自動更新タイマーとログ追尾プロセスを停止・解放する。</summary>
+        /// <summary>自動更新タイマー・ログ追尾・スマホサーバーを停止・解放する。</summary>
         member _.Dispose() =
             timer.Stop()
             stopLogFollow()
             stopComposeLogFollow()
             cancelComposeLogFetch()
+            (mobileServer :> IDisposable).Dispose()

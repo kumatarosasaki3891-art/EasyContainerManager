@@ -56,7 +56,7 @@ modules:
       # Flathub 審査・本番ビルド用（タグおよびコミットSHA固定）
       # - type: git
       #   url: https://github.com/kumatarosasaki3891-art/EasyContainerManager.git
-      #   tag: linux-v1.1.0
+      #   tag: linux-v1.2.0
       #   commit: <COMMIT_SHA>
       # オフラインビルド用 NuGet パッケージ定義
       - nuget-sources.json

@@ -64,9 +64,18 @@ type ContainerPortBinding(rawHostIp: string, rawHostPort: string, rawContainerPo
     /// <summary>UI表示用のポートバインド文字列（例: 0.0.0.0:80->80/tcp）。</summary>
     member _.Display = sprintf "%s:%s->%s" hostIp hostPort containerPort
 
+/// <summary>コンテナにマウントされているボリューム／バインド情報。</summary>
+type ContainerMountInfo = {
+    MountType: string
+    VolumeName: string
+    Source: string
+    Destination: string
+    ReadWrite: bool
+}
+
 /// <summary>一覧に表示するコンテナの状態・公開ポート・イメージ・リソースサマリーを保持するモデル。</summary>
 [<AllowNullLiteral>]
-type ContainerInfo(id: string, initialName: string, initialStatus: string, initialImage: string, initialCreated: string, ?initialPorts: ContainerPortBinding list) =
+type ContainerInfo(id: string, initialName: string, initialStatus: string, initialImage: string, initialCreated: string, ?initialPorts: ContainerPortBinding list, ?initialMounts: ContainerMountInfo list, ?initialRestartCount: int, ?initialOomKilled: bool, ?initialExitCode: int, ?initialInspectStatus: string) =
     inherit ObservableObject()
 
     let mutable name = initialName
@@ -76,10 +85,26 @@ type ContainerInfo(id: string, initialName: string, initialStatus: string, initi
     let mutable languageCode = "ja-JP"
     let mutable resources: ContainerStats option = None
     let mutable portBindings: ContainerPortBinding list = defaultArg initialPorts []
+    let mutable mounts: ContainerMountInfo list = defaultArg initialMounts []
+    let mutable restartCount: int = defaultArg initialRestartCount 0
+    let mutable oomKilled: bool = defaultArg initialOomKilled false
+    let mutable exitCode: int = defaultArg initialExitCode 0
+    let mutable inspectStatus: string = defaultArg initialInspectStatus ""
     let mutable isOperating = false
 
     static let isDarkTheme () =
         not (isNull Application.Current) && Application.Current.ActualThemeVariant = ThemeVariant.Dark
+
+    static let formatMountLabel (mount: ContainerMountInfo) =
+        let rawName =
+            if not (String.IsNullOrWhiteSpace(mount.VolumeName)) then mount.VolumeName.Trim()
+            else mount.Source.Trim()
+        let isHex64 =
+            rawName.Length = 64
+            && rawName |> Seq.forall (fun c -> (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))
+        let shortName = if isHex64 then rawName.Substring(0, 12) + "…" else rawName
+        if String.IsNullOrWhiteSpace(mount.Destination) then shortName
+        else sprintf "%s → %s" shortName mount.Destination
 
     /// <summary>コンテナ固有のID（短縮IDまたはフルID）。</summary>
     member _.Id = id
@@ -125,6 +150,54 @@ type ContainerInfo(id: string, initialName: string, initialStatus: string, initi
                 this.OnPropertyChanged(nameof this.HasAllInterfacesPort)
                 this.OnPropertyChanged(nameof this.PortsBrush)
                 this.OnPropertyChanged(nameof this.PortsTooltip)
+
+    /// <summary>コンテナにマウントされているストレージ一覧。</summary>
+    member this.Mounts
+        with get () = mounts
+        and set (value: ContainerMountInfo list) =
+            if mounts <> value then
+                mounts <- value
+                this.OnPropertyChanged(nameof this.Mounts)
+                this.OnPropertyChanged(nameof this.VolumeMounts)
+                this.OnPropertyChanged(nameof this.HasVolumeMounts)
+                this.OnPropertyChanged(nameof this.MountedVolumesSummary)
+
+    /// <summary>ボリューム種別またはボリューム名を持つマウント一覧。</summary>
+    member _.VolumeMounts =
+        mounts
+        |> List.filter (fun m ->
+            m.MountType.Equals("volume", StringComparison.OrdinalIgnoreCase)
+            || not (String.IsNullOrWhiteSpace(m.VolumeName)))
+
+    /// <summary>マウント中ボリュームが 1 件以上あるかどうか。</summary>
+    member this.HasVolumeMounts =
+        not (List.isEmpty this.VolumeMounts)
+
+    /// <summary>マウント中ボリュームの要約文字列。</summary>
+    member this.MountedVolumesSummary =
+        let vols = this.VolumeMounts
+        if List.isEmpty vols then "--"
+        else vols |> List.map formatMountLabel |> String.concat ", "
+
+    /// <summary>コンテナの再起動回数（inspect の RestartCount）。</summary>
+    member this.RestartCount
+        with get () = restartCount
+        and set value = this.SetProperty(&restartCount, value) |> ignore
+
+    /// <summary>メモリ不足で強制終了されたか（inspect の State.OOMKilled）。</summary>
+    member this.OomKilled
+        with get () = oomKilled
+        and set value = this.SetProperty(&oomKilled, value) |> ignore
+
+    /// <summary>終了コード（inspect の State.ExitCode）。</summary>
+    member this.ExitCode
+        with get () = exitCode
+        and set value = this.SetProperty(&exitCode, value) |> ignore
+
+    /// <summary>inspect 由来の状態文字列（running / exited 等）。</summary>
+    member this.InspectStatus
+        with get () = inspectStatus
+        and set value = this.SetProperty(&inspectStatus, value) |> ignore
 
     /// <summary>UI表示用の公開ポート文字列（カンマ区切り、未公開時は --）。</summary>
     member _.PublishedPorts =
@@ -202,3 +275,8 @@ type ContainerInfo(id: string, initialName: string, initialStatus: string, initi
         this.Image <- source.Image
         this.Created <- source.Created
         this.PortBindings <- source.PortBindings
+        this.Mounts <- source.Mounts
+        this.RestartCount <- source.RestartCount
+        this.OomKilled <- source.OomKilled
+        this.ExitCode <- source.ExitCode
+        this.InspectStatus <- source.InspectStatus

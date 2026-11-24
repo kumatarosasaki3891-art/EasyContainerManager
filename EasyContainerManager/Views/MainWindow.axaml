@@ -34,7 +34,7 @@
 
     <Grid>
         <Grid RowDefinitions="Auto,*" Margin="24" RowSpacing="16">
-        <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
             <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="24">
                 <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
                     <Border Width="48" Height="48" CornerRadius="10" ClipToBounds="True" VerticalAlignment="Center">
@@ -63,6 +63,19 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
                     <Button x:Name="RefreshButton" Content="{Binding RefreshLabel}" Width="84" />
+                    <Button x:Name="OpenMobileSessionDialogButton" Width="38" Padding="0"
+                            ToolTip.Tip="{Binding MobileSessionDialogTitle}"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
+                        <Grid Width="28" Height="22">
+                            <TextBlock Text="📱" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Ellipse Width="7" Height="7" Fill="#16A34A"
+                                     IsVisible="{Binding IsMobileServerRunning}"
+                                     HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,1,1,0" />
+                        </Grid>
+                    </Button>
+                    <Button x:Name="OpenFaqDialogButton" Content="❓" Width="38" Padding="0"
+                            ToolTip.Tip="{Binding FaqDialogTitle}"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
                     <Button x:Name="OpenInfoDialogButton" Width="38" Padding="0"
                             ToolTip.Tip="{Binding InfoDialogTitle}"
                             HorizontalContentAlignment="Center" VerticalContentAlignment="Center">
@@ -110,6 +123,20 @@
                 </ComboBox>
                 <CheckBox Grid.Column="3" Content="{Binding NotificationsLabel}" IsChecked="{Binding NotificationsEnabled}" />
             </Grid>
+            <Border Grid.Row="4" IsVisible="{Binding HasActiveAlertBanner}"
+                    BorderBrush="{Binding ActiveAlertBannerBrush}" BorderThickness="1.5"
+                    Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    CornerRadius="6" Padding="10,6">
+                <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                    <TextBlock Grid.Column="0" Text="{Binding ActiveAlertBannerSeverityBadge}" FontSize="15" VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ActiveAlertBannerTitle}" FontSize="12" FontWeight="Bold" Foreground="{Binding ActiveAlertBannerBrush}" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding ActiveAlertBannerMessage}" FontSize="12" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button x:Name="DismissAlertBannerButton" Grid.Column="2" Content="✕" Width="28" Height="28" Padding="0"
+                            ToolTip.Tip="{Binding ActiveAlertBannerDismissTooltip}" VerticalAlignment="Center" />
+                </Grid>
+            </Border>
         </Grid>
 
         <TabControl Grid.Row="1">
@@ -159,25 +186,32 @@
                                 Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                                 BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
                                 BorderThickness="1" CornerRadius="6" Padding="8,4" Margin="0,0,0,4">
-                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalAlignment="Center">
-                                <Button x:Name="InferredServicesCardButton" Grid.Column="0"
-                                        IsVisible="{Binding HasInferredServices}"
-                                        Background="Transparent" BorderThickness="0" Padding="0" Margin="0"
-                                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
-                                    <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="2">
-                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding InferredServicesLabel}" FontWeight="SemiBold" VerticalAlignment="Center" />
-                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding InferredServicesText}" VerticalAlignment="Center" TextWrapping="Wrap" />
-                                        <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Text="{Binding InferredServicesNote}" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
-                                    </Grid>
-                                </Button>
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
-                                    <Button x:Name="OpenInferenceDialogButton"
-                                            Content="{Binding InferenceDetailButtonLabel}"
-                                            FontSize="12" Padding="8,4" VerticalAlignment="Center" />
-                                    <Button x:Name="OpenDiagnosticsButton"
-                                            Content="{Binding DiagnosticsButtonLabel}"
-                                            FontSize="12" Padding="8,4" VerticalAlignment="Center" />
-                                </StackPanel>
+                            <Grid RowDefinitions="Auto,Auto" RowSpacing="4">
+                                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8" VerticalAlignment="Center">
+                                    <Button x:Name="InferredServicesCardButton" Grid.Column="0"
+                                            IsVisible="{Binding HasInferredServices}"
+                                            Background="Transparent" BorderThickness="0" Padding="0" Margin="0"
+                                            HorizontalAlignment="Stretch" HorizontalContentAlignment="Left" Cursor="Hand">
+                                        <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="2">
+                                            <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding InferredServicesLabel}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding InferredServicesText}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Text="{Binding InferredServicesNote}" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
+                                        </Grid>
+                                    </Button>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <Button x:Name="OpenInferenceDialogButton"
+                                                Content="{Binding InferenceDetailButtonLabel}"
+                                                FontSize="12" Padding="8,4" VerticalAlignment="Center" />
+                                        <Button x:Name="OpenDiagnosticsButton"
+                                                Content="{Binding DiagnosticsButtonLabel}"
+                                                FontSize="12" Padding="8,4" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </Grid>
+                                <Grid Grid.Row="1" ColumnDefinitions="Auto,*" ColumnSpacing="8"
+                                      IsVisible="{Binding HasSelectedContainerMounts}">
+                                    <TextBlock Grid.Column="0" Text="{Binding MountedVolumesLabel}" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding SelectedContainerMountsText}" FontSize="12" Foreground="Gray" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedContainerMountsText}" VerticalAlignment="Center" />
+                                </Grid>
                             </Grid>
                         </Border>
                     </Grid>
@@ -262,6 +296,108 @@
                     <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="10">
                         <Button x:Name="RemoveImageButton" Content="{Binding DeleteImageLabel}" IsEnabled="{Binding CanRemoveImage}" />
                     </StackPanel>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="{Binding TabVolumesLabel}">
+                <Grid RowDefinitions="Auto,Auto,3*,Auto,2*" RowSpacing="8" Margin="8">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="14" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding VolumeSummaryText}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding UnusedVolumeSummaryText}" Foreground="DarkGoldenrod" FontWeight="SemiBold" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <Border Grid.Column="1" Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="8,3" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding VolumeReadOnlyNotice}" FontSize="11" Foreground="Gray" />
+                        </Border>
+                    </Grid>
+                    <Grid Grid.Row="1" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+                        <TextBox Grid.Column="0" Text="{Binding VolumeSearchText}" PlaceholderText="{Binding VolumeSearchPlaceholder}" />
+                        <CheckBox Grid.Column="1" Content="{Binding VolumeUnusedOnlyLabel}" IsChecked="{Binding ShowUnusedVolumesOnly}" VerticalAlignment="Center" />
+                        <Button x:Name="RefreshVolumesButton" Grid.Column="2" Content="{Binding RefreshLabel}" MinWidth="84" />
+                    </Grid>
+                    <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="4" MinHeight="90">
+                        <Grid Grid.Row="0" ColumnDefinitions="3*,Auto,*,3*,2*" ColumnSpacing="8" Margin="4,0">
+                            <TextBlock Text="{Binding VolumeNameLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="{Binding VolumeDriverLabel}" FontWeight="SemiBold" MinWidth="72" />
+                            <TextBlock Grid.Column="2" Text="{Binding VolumeSizeLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="3" Text="{Binding VolumeAttachedLabel}" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="4" Text="{Binding CreatedAtLabel}" FontWeight="SemiBold" />
+                        </Grid>
+                        <Grid Grid.Row="1">
+                            <TextBlock Text="{Binding VolumesEmptyText}" IsVisible="{Binding HasNoFilteredVolumes}"
+                                       Foreground="Gray" Margin="8,12" VerticalAlignment="Top" />
+                            <ListBox ItemsSource="{Binding FilteredVolumes}" SelectedItem="{Binding SelectedVolume}"
+                                     IsVisible="{Binding !HasNoFilteredVolumes}">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="model:VolumeInfo">
+                                        <Grid ColumnDefinitions="3*,Auto,*,3*,2*" ColumnSpacing="8" Margin="4,4">
+                                            <StackPanel Spacing="2">
+                                                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                                                <StackPanel Orientation="Horizontal" Spacing="6">
+                                                    <TextBlock Text="{Binding KindBadge}" FontSize="11" Foreground="Gray" />
+                                                    <TextBlock Text="{Binding UsageBadge}" FontSize="11" Foreground="{Binding UsageBrush}" FontWeight="SemiBold" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="{Binding Driver}" VerticalAlignment="Center" MinWidth="72" />
+                                            <TextBlock Grid.Column="2" Text="{Binding SizeText}" Foreground="{Binding SizeBrush}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                            <TextBlock Grid.Column="3" Text="{Binding AttachedContainersSummary}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding AttachedContainersSummary}" />
+                                            <TextBlock Grid.Column="4" Text="{Binding CreatedAt}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Grid>
+                    <GridSplitter Grid.Row="3" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                  Height="6" HorizontalAlignment="Stretch" Background="Transparent" />
+                    <Border Grid.Row="4"
+                            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                            BorderThickness="1" CornerRadius="6" Padding="10,8" MinHeight="80">
+                        <Grid>
+                            <TextBlock Text="{Binding VolumeDetailPlaceholder}" IsVisible="{Binding !HasSelectedVolume}"
+                                       Foreground="Gray" VerticalAlignment="Top" />
+                            <ScrollViewer IsVisible="{Binding HasSelectedVolume}" VerticalScrollBarVisibility="Auto">
+                                <StackPanel Spacing="6">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <TextBlock Text="{Binding VolumeDetailTitle}" FontSize="14" FontWeight="Bold" />
+                                        <TextBlock Grid.Column="1" Text="{Binding SelectedVolume.UnusedWarningText}"
+                                                   IsVisible="{Binding SelectedVolume.IsUnusedWithSize}"
+                                                   Foreground="DarkOrange" FontSize="12" FontWeight="SemiBold" />
+                                    </Grid>
+                                    <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto" ColumnSpacing="12" RowSpacing="4">
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding VolumeNameLabel}" Foreground="Gray" FontSize="12" />
+                                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedVolume.Name, Mode=OneWay}" IsReadOnly="True" FontSize="12" Padding="4,2" />
+                                        <TextBlock Grid.Row="1" Grid.Column="0" Text="{Binding VolumeKindLabel}" Foreground="Gray" FontSize="12" />
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="10">
+                                            <TextBlock Text="{Binding SelectedVolume.KindBadge}" FontSize="12" />
+                                            <TextBlock Text="{Binding SelectedVolume.UsageBadge}" Foreground="{Binding SelectedVolume.UsageBrush}" FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Text="{Binding SelectedVolume.Driver}" FontSize="12" Foreground="Gray" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Row="2" Grid.Column="0" Text="{Binding VolumeSizeLabel}" Foreground="Gray" FontSize="12" />
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedVolume.SizeText}" Foreground="{Binding SelectedVolume.SizeBrush}" FontWeight="SemiBold" FontSize="12" />
+                                        <TextBlock Grid.Row="3" Grid.Column="0" Text="{Binding VolumeMountpointLabel}" Foreground="Gray" FontSize="12" />
+                                        <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding SelectedVolume.Mountpoint, Mode=OneWay}" IsReadOnly="True" FontSize="12" Padding="4,2" />
+                                        <TextBlock Grid.Row="4" Grid.Column="0" Text="{Binding VolumeAttachedLabel}" Foreground="Gray" FontSize="12" VerticalAlignment="Top" />
+                                        <ItemsControl Grid.Row="4" Grid.Column="1" ItemsSource="{Binding SelectedVolume.AttachedContainers}"
+                                                      IsVisible="{Binding SelectedVolume.HasAttachedContainers}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate x:DataType="model:ContainerVolumeRef">
+                                                    <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,1">
+                                                        <TextBlock Text="{Binding ContainerName}" FontWeight="SemiBold" FontSize="12" />
+                                                        <TextBlock Text="→" Foreground="Gray" FontSize="12" />
+                                                        <TextBlock Text="{Binding Destination}" FontSize="12" Foreground="Gray" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </Grid>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
                 </Grid>
             </TabItem>
 
@@ -374,30 +510,67 @@
             </TabItem>
 
             <TabItem Header="{Binding MonitoringLabel}">
-                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="10" Margin="8">
-                    <TextBlock Text="{Binding DockerStatsLabel}" FontSize="16" FontWeight="SemiBold" />
-                    <Grid Grid.Row="1" ColumnDefinitions="2*,*,2*,*,*,*" ColumnSpacing="8" Margin="4,0">
-                        <TextBlock Text="{Binding ContainerNameLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                        <TextBlock Grid.Column="1" Text="{Binding CpuLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                        <TextBlock Grid.Column="2" Text="{Binding MemoryLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                        <TextBlock Grid.Column="3" Text="{Binding MemoryPercentLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                        <TextBlock Grid.Column="4" Text="{Binding NetworkLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
-                        <TextBlock Grid.Column="5" Text="{Binding StateLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <Grid RowDefinitions="2*,Auto,*" RowSpacing="6" Margin="8">
+                    <Grid Grid.Row="0" RowDefinitions="Auto,Auto,*" RowSpacing="8" MinHeight="90">
+                        <TextBlock Text="{Binding DockerStatsLabel}" FontSize="16" FontWeight="SemiBold" />
+                        <Grid Grid.Row="1" ColumnDefinitions="2*,*,2*,*,*,*" ColumnSpacing="8" Margin="4,0">
+                            <TextBlock Text="{Binding ContainerNameLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Grid.Column="1" Text="{Binding CpuLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Grid.Column="2" Text="{Binding MemoryLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Grid.Column="3" Text="{Binding MemoryPercentLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Grid.Column="4" Text="{Binding NetworkLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Grid.Column="5" Text="{Binding StateLabel}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                        </Grid>
+                        <ListBox Grid.Row="2" ItemsSource="{Binding Stats}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="model:ContainerStats">
+                                    <Grid ColumnDefinitions="2*,*,2*,*,*,*" ColumnSpacing="8" Margin="4,8">
+                                        <TextBlock Text="{Binding Container}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Cpu}" Foreground="{Binding CpuBrush}" VerticalAlignment="Center" ToolTip.Tip="{Binding CpuStatus}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Memory}" Foreground="{Binding MemoryBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Column="3" Text="{Binding MemoryPercent}" Foreground="{Binding MemoryBrush}" VerticalAlignment="Center" ToolTip.Tip="{Binding MemoryStatus}" />
+                                        <TextBlock Grid.Column="4" Text="{Binding Network}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                        <TextBlock Grid.Column="5" Text="{Binding Status}" Foreground="{Binding StatusBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                     </Grid>
-                    <ListBox Grid.Row="2" ItemsSource="{Binding Stats}">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="model:ContainerStats">
-                                <Grid ColumnDefinitions="2*,*,2*,*,*,*" ColumnSpacing="8" Margin="4,8">
-                                    <TextBlock Text="{Binding Container}" VerticalAlignment="Center" TextWrapping="Wrap" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Cpu}" Foreground="{Binding CpuBrush}" VerticalAlignment="Center" ToolTip.Tip="{Binding CpuStatus}" />
-                                    <TextBlock Grid.Column="2" Text="{Binding Memory}" Foreground="{Binding MemoryBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
-                                    <TextBlock Grid.Column="3" Text="{Binding MemoryPercent}" Foreground="{Binding MemoryBrush}" VerticalAlignment="Center" ToolTip.Tip="{Binding MemoryStatus}" />
-                                    <TextBlock Grid.Column="4" Text="{Binding Network}" VerticalAlignment="Center" TextWrapping="Wrap" />
-                                    <TextBlock Grid.Column="5" Text="{Binding Status}" Foreground="{Binding StatusBrush}" VerticalAlignment="Center" TextWrapping="Wrap" />
-                                </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                    <GridSplitter Grid.Row="1" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext"
+                                  Height="6" HorizontalAlignment="Stretch" Background="Transparent" />
+                    <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="6" MinHeight="80">
+                        <TextBlock Grid.Row="0" Text="{Binding AlertHistoryHeader}" FontSize="15" FontWeight="SemiBold" />
+                        <Border Grid.Row="1"
+                                Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                BorderThickness="1" CornerRadius="4" Padding="8,6">
+                            <Grid>
+                                <TextBlock Text="{Binding AlertHistoryEmptyText}"
+                                           IsVisible="{Binding HasNoAlertHistory}"
+                                           Foreground="Gray" FontSize="12" VerticalAlignment="Top" />
+                                <ScrollViewer IsVisible="{Binding HasAlertHistory}" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding AlertHistory}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="model:AlertDisplayItem">
+                                                <Border BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                                                        BorderThickness="0,0,0,1" Padding="0,4">
+                                                    <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
+                                                        <TextBlock Grid.Column="0" Text="{Binding OccurredAtText}" FontSize="11" Foreground="Gray"
+                                                                   FontFamily="Cascadia Code,Consolas,monospace" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding SeverityBadge}" FontSize="12" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="2" Text="{Binding CategoryText}" FontSize="12" FontWeight="SemiBold"
+                                                                   Foreground="{Binding SeverityBrush}" VerticalAlignment="Center" />
+                                                        <TextBlock Grid.Column="3" Text="{Binding SummaryLine}" FontSize="12"
+                                                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SummaryLine}" VerticalAlignment="Center" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </Border>
+                    </Grid>
                 </Grid>
             </TabItem>
             <TabItem Header="{Binding SshLabel}">
@@ -763,6 +936,152 @@
 
                     <!-- 閉じるボタン -->
                     <Button x:Name="CloseInfoDialogButton"
+                            Content="{Binding CloseLabel}"
+                            HorizontalAlignment="Right" MinWidth="84" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 初心者向け FAQ ダイアログ（モーダルオーバーレイ） -->
+        <Grid Background="#66000000" IsVisible="{Binding IsFaqDialogOpen}"
+              HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="20" Margin="24"
+                    MaxWidth="720" MinWidth="460" MaxHeight="620" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    BoxShadow="0 8 32 0 #40000000">
+                <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" RowSpacing="10">
+                    <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                        <TextBlock Grid.Column="0" Text="❓" FontSize="20" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding FaqDialogTitle}" FontSize="17" FontWeight="Bold" />
+                            <TextBlock Text="{Binding FaqDialogSubtitle}" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <ComboBox Grid.Column="2" ItemsSource="{Binding FaqLanguageOptions}"
+                                  SelectedItem="{Binding SelectedFaqLanguage, Mode=TwoWay}" Width="110" VerticalAlignment="Center">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="model:ChoiceOption">
+                                    <TextBlock Text="{Binding Label}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Button x:Name="CloseFaqDialogXButton" Grid.Column="3" Content="✕" Width="30" Height="30" Padding="0" />
+                    </Grid>
+
+                    <Grid Grid.Row="1" ColumnDefinitions="180,*" ColumnSpacing="8">
+                        <ComboBox Grid.Column="0" ItemsSource="{Binding FaqCategoryOptions}"
+                                  SelectedItem="{Binding SelectedFaqCategory, Mode=TwoWay}" HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="model:ChoiceOption">
+                                    <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBox Grid.Column="1" Text="{Binding FaqSearchText}" PlaceholderText="{Binding FaqSearchPlaceholder}" />
+                    </Grid>
+
+                    <Border Grid.Row="2" IsVisible="{Binding ShowFaqEnglishFallbackNote}"
+                            Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                            CornerRadius="4" Padding="8,5">
+                        <TextBlock Text="{Binding FaqEnglishFallbackText}" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
+                    </Border>
+
+                    <ScrollViewer Grid.Row="3" MaxHeight="380" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Spacing="6">
+                            <TextBlock Text="{Binding FaqEmptyText}" IsVisible="{Binding HasNoFaqMatches}"
+                                       Foreground="Gray" FontSize="12" Margin="4,8" />
+                            <ItemsControl ItemsSource="{Binding FilteredFaqItems}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="model:FaqDisplayItem">
+                                        <Expander Margin="0,0,0,6" HorizontalAlignment="Stretch">
+                                            <Expander.Header>
+                                                <TextBlock Text="{Binding HeaderText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            </Expander.Header>
+                                            <TextBlock Text="{Binding Answer}" FontSize="13" TextWrapping="Wrap" Margin="4,4" />
+                                        </Expander>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <TextBlock Grid.Row="4" Text="{Binding FaqTtsHintText}" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
+
+                    <Button x:Name="CloseFaqDialogButton" Grid.Row="5"
+                            Content="{Binding CloseLabel}"
+                            HorizontalAlignment="Right" MinWidth="84" />
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- スマホ連携 (QR) ダイアログ（モーダルオーバーレイ） -->
+        <Grid Background="#66000000" IsVisible="{Binding IsMobileSessionDialogOpen}"
+              HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                    BorderBrush="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                    BorderThickness="1" CornerRadius="8" Padding="20" Margin="24"
+                    MaxWidth="560" MinWidth="420" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    BoxShadow="0 8 32 0 #40000000">
+                <StackPanel Spacing="12">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10" VerticalAlignment="Center">
+                        <TextBlock Grid.Column="0" Text="📱" FontSize="20" VerticalAlignment="Center" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding MobileSessionDialogTitle}" FontSize="17" FontWeight="Bold" />
+                            <TextBlock Text="{Binding MobileSessionSubtitle}" FontSize="11" Foreground="Gray" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <Button x:Name="CloseMobileSessionDialogXButton" Grid.Column="2" Content="✕" Width="30" Height="30" Padding="0" />
+                    </Grid>
+
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                            CornerRadius="6" Padding="10,6">
+                        <TextBlock Text="{Binding MobileSessionReadOnlyNotice}" FontSize="11.5" Foreground="Gray" TextWrapping="Wrap" />
+                    </Border>
+
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="{Binding MobileLanIpLabel}" FontSize="12" FontWeight="SemiBold" />
+                        <ComboBox ItemsSource="{Binding LanIpCandidates}"
+                                  SelectedItem="{Binding SelectedLanIp, Mode=TwoWay}"
+                                  HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="model:ChoiceOption">
+                                    <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <TextBlock Text="{Binding MobileLoopbackHintText}" IsVisible="{Binding IsLoopbackLanIpSelected}"
+                                   FontSize="11" Foreground="DarkOrange" TextWrapping="Wrap" />
+                    </StackPanel>
+
+                    <WrapPanel Orientation="Horizontal">
+                        <Button x:Name="StartMobileSessionButton" Content="{Binding MobileStartLabel}"
+                                IsEnabled="{Binding CanStartMobileSession}" MinWidth="120" />
+                        <Button x:Name="StopMobileSessionButton" Content="{Binding MobileStopLabel}"
+                                IsEnabled="{Binding IsMobileServerRunning}" MinWidth="120" />
+                        <Button x:Name="ReissueMobileSessionButton" Content="{Binding MobileReissueLabel}"
+                                IsEnabled="{Binding IsMobileServerRunning}" MinWidth="140" />
+                    </WrapPanel>
+
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeLowBrush}"
+                            CornerRadius="6" Padding="10,8">
+                        <StackPanel Spacing="4">
+                            <TextBlock Text="{Binding MobileSessionStatusText}" FontSize="12.5" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding MobileSessionError}" IsVisible="{Binding HasMobileSessionError}"
+                                       FontSize="12" Foreground="Crimson" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Spacing="8" IsVisible="{Binding IsMobileServerRunning}" HorizontalAlignment="Center">
+                        <Border Background="White" CornerRadius="8" Padding="10" HorizontalAlignment="Center">
+                            <Image Source="{Binding MobileQrBitmap}" Width="210" Height="210"
+                                   RenderOptions.BitmapInterpolationMode="None" />
+                        </Border>
+                        <StackPanel Spacing="3" Width="460">
+                            <TextBlock Text="{Binding MobileUrlLabel}" FontSize="11" Foreground="Gray" />
+                            <TextBox Text="{Binding MobileSessionUrl, Mode=OneWay}" IsReadOnly="True" FontSize="12" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <Button x:Name="CloseMobileSessionDialogButton"
                             Content="{Binding CloseLabel}"
                             HorizontalAlignment="Right" MinWidth="84" />
                 </StackPanel>

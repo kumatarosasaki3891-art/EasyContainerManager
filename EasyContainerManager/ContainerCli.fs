@@ -196,6 +196,18 @@ module DockerDesktop =
     /// <summary>候補パスの中から最初に存在する Docker Desktop 実行ファイルを返す。</summary>
     let findExecutable candidates = candidates |> List.tryFind File.Exists
 
+/// <summary>コンテナ inspect 1件分から抽出したメタデータ（ポート・マウント・状態情報）。</summary>
+type ContainerInspectMeta = {
+    Id: string
+    Name: string
+    Ports: ContainerPortBinding list
+    Mounts: ContainerMountInfo list
+    RestartCount: int
+    OomKilled: bool
+    ExitCode: int
+    InspectStatus: string
+}
+
 /// <summary>コンテナ CLI の JSON / NDJSON 出力を解析するモジュール。</summary>
 module ContainerOutput =
     /// <summary>JSON 配列または 1 行 1 JSON（NDJSON）形式の出力を JsonElement リストへ変換する。</summary>
@@ -312,6 +324,97 @@ module ContainerOutput =
         |> List.tryFind (fun (id, name, _) -> matchesId id || matchesName name)
         |> Option.map (fun (_, _, ports) -> ports)
         |> Option.defaultValue []
+
+    let private tryInt (names: string list) (element: JsonElement) : int option =
+        names
+        |> List.tryPick (fun n -> tryProperty n element)
+        |> Option.bind (fun v ->
+            match v.ValueKind with
+            | JsonValueKind.Number ->
+                match v.TryGetInt32() with
+                | true, num -> Some num
+                | _ -> None
+            | JsonValueKind.String ->
+                match Int32.TryParse(v.GetString()) with
+                | true, num -> Some num
+                | _ -> None
+            | _ -> None)
+
+    let private tryBool (names: string list) (element: JsonElement) : bool option =
+        names
+        |> List.tryPick (fun n -> tryProperty n element)
+        |> Option.bind (fun v ->
+            match v.ValueKind with
+            | JsonValueKind.True -> Some true
+            | JsonValueKind.False -> Some false
+            | JsonValueKind.String ->
+                match Boolean.TryParse(v.GetString()) with
+                | true, b -> Some b
+                | _ -> None
+            | _ -> None)
+
+    /// <summary>inspect JSON の 1 コンテナ要素からマウント一覧を抽出する。</summary>
+    let extractMounts (element: JsonElement) : ContainerMountInfo list =
+        match tryProperty "Mounts" element with
+        | Some mountsElem when mountsElem.ValueKind = JsonValueKind.Array ->
+            mountsElem.EnumerateArray()
+            |> Seq.choose (fun m ->
+                if m.ValueKind <> JsonValueKind.Object then None
+                else
+                    let mountType = valueAny [ "Type"; "type" ] m
+                    let volumeName = valueAny [ "Name"; "name" ] m
+                    let source = valueAny [ "Source"; "source" ] m
+                    let destination = valueAny [ "Destination"; "destination"; "Target"; "target" ] m
+                    let rw = tryBool [ "RW"; "rw" ] m |> Option.defaultValue true
+                    if String.IsNullOrWhiteSpace(mountType) && String.IsNullOrWhiteSpace(volumeName) && String.IsNullOrWhiteSpace(destination) then
+                        None
+                    else
+                        Some {
+                            MountType = mountType
+                            VolumeName = volumeName
+                            Source = source
+                            Destination = destination
+                            ReadWrite = rw
+                        })
+            |> Seq.toList
+        | _ -> []
+
+    /// <summary>inspect の JSON 出力からポート・マウント・状態メタデータの一覧を解析する。</summary>
+    let inspectContainerMeta (output: string) : ContainerInspectMeta list =
+        objects output
+        |> List.map (fun root ->
+            let id = valueAny [ "Id"; "ID" ] root
+            let name = (value "Name" root).TrimStart('/')
+            let restartCount = tryInt [ "RestartCount" ] root |> Option.defaultValue 0
+            let stateElem = tryProperty "State" root
+            let oomKilled = stateElem |> Option.bind (tryBool [ "OOMKilled" ]) |> Option.defaultValue false
+            let exitCode = stateElem |> Option.bind (tryInt [ "ExitCode" ]) |> Option.defaultValue 0
+            let inspectStatus = stateElem |> Option.map (valueAny [ "Status" ]) |> Option.defaultValue ""
+            {
+                Id = id
+                Name = name
+                Ports = portBindings root
+                Mounts = extractMounts root
+                RestartCount = restartCount
+                OomKilled = oomKilled
+                ExitCode = exitCode
+                InspectStatus = inspectStatus
+            })
+
+    /// <summary>inspect メタデータ一覧からコンテナ ID または名前に一致する要素を検索する。</summary>
+    let findContainerMeta (containerId: string) (containerName: string) (inspected: ContainerInspectMeta list) : ContainerInspectMeta option =
+        let trimmedName = (if isNull containerName then "" else containerName.TrimStart('/')).Trim()
+        let matchesId (inspectedId: string) =
+            not (String.IsNullOrWhiteSpace(containerId))
+            && not (String.IsNullOrWhiteSpace(inspectedId))
+            && (inspectedId.StartsWith(containerId, StringComparison.OrdinalIgnoreCase)
+                || containerId.StartsWith(inspectedId, StringComparison.OrdinalIgnoreCase))
+        let matchesName (inspectedName: string) =
+            not (String.IsNullOrWhiteSpace(trimmedName))
+            && not (String.IsNullOrWhiteSpace(inspectedName))
+            && String.Equals(inspectedName, trimmedName, StringComparison.OrdinalIgnoreCase)
+        inspected
+        |> List.tryFind (fun item -> matchesId item.Id || matchesName item.Name)
 
     /// <summary>compose ps の JSON 出力から稼働数・総数・異常サービス一覧を集計する。</summary>
     let composeSnapshot output =
@@ -651,21 +754,35 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
                         ContainerOutput.value "Image" root,
                         ContainerOutput.value "CreatedAt" root)
                 let ids = parsed |> List.map (fun (id, _, _, _, _) -> id) |> List.filter (String.IsNullOrWhiteSpace >> not)
-                let! inspectedPorts = async {
+                let! inspectedMeta = async {
                     if List.isEmpty ids then return []
                     else
                         let! inspectResult = execute ("inspect" :: ids)
                         match inspectResult with
                         | Ok inspectOutput ->
-                            try return ContainerOutput.inspectPorts inspectOutput
+                            try return ContainerOutput.inspectContainerMeta inspectOutput
                             with _ -> return []
                         | Error _ -> return []
                 }
                 let items =
                     parsed
                     |> List.map (fun (id, names, status, image, createdAt) ->
-                        let ports = ContainerOutput.findContainerPorts id names inspectedPorts
-                        ContainerInfo(id, names, status, image, createdAt, initialPorts = ports))
+                        match ContainerOutput.findContainerMeta id names inspectedMeta with
+                        | Some meta ->
+                            ContainerInfo(
+                                id,
+                                names,
+                                status,
+                                image,
+                                createdAt,
+                                initialPorts = meta.Ports,
+                                initialMounts = meta.Mounts,
+                                initialRestartCount = meta.RestartCount,
+                                initialOomKilled = meta.OomKilled,
+                                initialExitCode = meta.ExitCode,
+                                initialInspectStatus = meta.InspectStatus)
+                        | None ->
+                            ContainerInfo(id, names, status, image, createdAt))
                 return Ok items
             with ex ->
                 return Error (sprintf "コンテナ一覧を読み取れませんでした: %s" ex.Message)
@@ -872,3 +989,86 @@ type ContainerCli(?connection: SshConnection, ?runtime: ContainerRuntime) =
             | "停止" -> [ "down" ]
             | _ -> [ "restart" ]
         executeWithProgress (Some folderPath) ("compose" :: command) onProgress
+
+    /// <summary>ボリューム一覧（volume ls / inspect / system df -v）とコンテナ紐付けを統合取得する（読み取り専用）。</summary>
+    member _.ListVolumes(containers: ContainerInfo list) : Async<Result<VolumeSnapshot list, string>> = async {
+        let! lsResult = execute [ "volume"; "ls"; "--format"; jsonFormat ]
+        match lsResult with
+        | Error message -> return Error message
+        | Ok lsOutput ->
+            try
+                let rawList = VolumeParser.parseVolumeLsJson lsOutput
+
+                // 詳細（Mountpoint・CreatedAt・Driver 等）を volume inspect で補完
+                let mutable inspectMap : Map<string, VolumeInspectRecord> = Map.empty
+                let names = rawList |> List.map (fun r -> r.Name) |> List.distinct
+                for chunk in names |> List.chunkBySize 50 do
+                    if not (List.isEmpty chunk) then
+                        let! inspRes = execute ("volume" :: "inspect" :: chunk)
+                        match inspRes with
+                        | Ok inspOut ->
+                            for kv in VolumeParser.parseVolumeInspectJson inspOut do
+                                inspectMap <- Map.add kv.Key kv.Value inspectMap
+                        | Error _ -> ()
+
+                // system df -v で容量・リンク数を取得（JSON 不可時はテキスト出力へフォールバック）
+                let! dfJsonRes = execute [ "system"; "df"; "-v"; "--format"; jsonFormat ]
+                let! dfMap = async {
+                    match dfJsonRes with
+                    | Ok dfOut ->
+                        let parsed = VolumeParser.parseSystemDfJson dfOut
+                        if not (Map.isEmpty parsed) then return parsed
+                        else
+                            let! dfTextRes = execute [ "system"; "df"; "-v" ]
+                            return
+                                match dfTextRes with
+                                | Ok textOut -> VolumeParser.parseSystemDfText textOut
+                                | Error _ -> Map.empty
+                    | Error _ ->
+                        let! dfTextRes = execute [ "system"; "df"; "-v" ]
+                        return
+                            match dfTextRes with
+                            | Ok textOut -> VolumeParser.parseSystemDfText textOut
+                            | Error _ -> Map.empty
+                }
+
+                // Linux ローカル環境では system df で容量が取れなかったマウント先に限り du -sb で補助計測
+                // Windows + Docker Desktop ではボリューム実体が VM 内のためホスト側 du は実施しない
+                let mutable duMap : Map<string, int64> = Map.empty
+                if not isRemote && not (OperatingSystem.IsWindows()) then
+                    let mutable probeCount = 0
+                    for raw in rawList do
+                        if probeCount < 30 then
+                            let hasSize =
+                                Map.tryFind raw.Name dfMap
+                                |> Option.bind (fun d -> d.SizeBytes)
+                                |> Option.isSome
+                            if not hasSize then
+                                let mountpoint =
+                                    Map.tryFind raw.Name inspectMap
+                                    |> Option.map (fun i -> i.Mountpoint)
+                                    |> Option.filter (String.IsNullOrWhiteSpace >> not)
+                                    |> Option.defaultValue raw.Mountpoint
+                                if not (String.IsNullOrWhiteSpace(mountpoint)) then
+                                    probeCount <- probeCount + 1
+                                    try
+                                        let info = FlatpakHost.createStartInfo inFlatpak "du" None [] [ "-sb"; mountpoint ]
+                                        use proc = new Process(StartInfo = info)
+                                        if proc.Start() then
+                                            if proc.WaitForExit(3000) && proc.ExitCode = 0 then
+                                                let out = proc.StandardOutput.ReadToEnd().Trim()
+                                                let parts = out.Split([| '\t'; ' ' |], StringSplitOptions.RemoveEmptyEntries)
+                                                if parts.Length >= 1 then
+                                                    match Int64.TryParse(parts.[0]) with
+                                                    | true, bytes when bytes >= 0L ->
+                                                        duMap <- Map.add raw.Name bytes duMap
+                                                    | _ -> ()
+                                            elif not proc.HasExited then
+                                                try proc.Kill(true) with _ -> ()
+                                    with _ -> ()
+
+                let snapshots = VolumeParser.linkAndBuildVolumes rawList inspectMap dfMap duMap containers
+                return Ok snapshots
+            with ex ->
+                return Error (sprintf "ボリューム一覧を読み取れませんでした: %s" ex.Message)
+    }
