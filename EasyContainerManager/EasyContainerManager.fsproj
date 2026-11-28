@@ -4,16 +4,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\app-icon.ico</ApplicationIcon>
-    <Version>1.2.0</Version>
-    <AssemblyVersion>1.2.0.0</AssemblyVersion>
-    <FileVersion>1.2.0.0</FileVersion>
+    <Version>1.2.1</Version>
+    <AssemblyVersion>1.2.1.0</AssemblyVersion>
+    <FileVersion>1.2.1.0</FileVersion>
     <Product>簡単コンテナ管理</Product>
     <Company>XXX</Company>
   </PropertyGroup>
 
   <ItemGroup>
     <Folder Include="Models\" />
-    <AvaloniaResource Include="Assets\**" />
+    <AvaloniaResource Include="Assets\**" Exclude="Assets\Store\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -61,7 +61,7 @@
 
   <Target Name="BuildMsix">
     <PropertyGroup>
-      <MsixVersion Condition="'$(MsixVersion)' == ''">1.2.0.0</MsixVersion>
+      <MsixVersion Condition="'$(MsixVersion)' == ''">1.2.1.0</MsixVersion>
       <MsixArchitectures Condition="'$(MsixArchitectures)' == ''">x64</MsixArchitectures>
     </PropertyGroup>
     <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\build-msix.ps1&quot; -Configuration $(Configuration) -Version $(MsixVersion) -Architectures $(MsixArchitectures)" />

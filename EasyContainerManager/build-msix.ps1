@@ -3,7 +3,7 @@ param(
     [string]$Configuration = "Release",
 
     [ValidatePattern('^\d+\.\d+\.\d+\.\d+$')]
-    [string]$Version = "1.2.0.0",
+    [string]$Version = "1.2.1.0",
 
     [ValidateSet("x64", "arm64", "x86")]
     [string[]]$Architectures = @("x64"),
@@ -75,6 +75,8 @@ foreach ($arch in $Architectures) {
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet publish failed for $rid with exit code $LASTEXITCODE."
     }
+
+    Get-ChildItem -Path $stageDir -Filter "*.pdb" -Recurse -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
 
     $stageAssets = Join-Path $stageDir "Assets"
     New-Item -ItemType Directory -Force -Path $stageAssets | Out-Null
